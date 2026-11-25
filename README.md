@@ -1,83 +1,87 @@
-<div align="center">
-
-<img src="public/logoooo1.png" alt="arKive" width="64" />
-
 # arKive
 
-*a quiet, private corner for your thoughts, drafts, and shared memories.* 🕯️✨
+*A private space for writing, organizing, and preserving thoughts.*
 
-[![Live App](https://img.shields.io/badge/live-arkive--3jb.pages.dev-b94d3f?style=flat-square)](https://arkive-3jb.pages.dev)
-[![Hosted on Cloudflare](https://img.shields.io/badge/cloudflare-pages%20%2B%20d1-f38020?style=flat-square&logo=cloudflare&logoColor=white)](https://arkive-3jb.pages.dev)
-[![React](https://img.shields.io/badge/react-19-131619?style=flat-square&logo=react)](https://react.dev)
+[![Live App](https://img.shields.io/badge/Live-arkive--3jb.pages.dev-b94d3f?style=flat-square)](https://arkive-3jb.pages.dev)
+[![Cloudflare](https://img.shields.io/badge/Cloudflare-Pages%20%2B%20D1-f38020?style=flat-square&logo=cloudflare&logoColor=white)](https://www.cloudflare.com/)
+[![React](https://img.shields.io/badge/React-19-61DAFB?style=flat-square&logo=react)](https://react.dev/)
 
-[**Open arKive →**](https://arkive-3jb.pages.dev)
-
-</div>
+**[Open arKive](https://arkive-3jb.pages.dev)**
 
 ---
 
-Replace messy notes, scattered tabs, and noisy social writing apps with a space that actually feels personal.
+## Overview
 
-**arKive** is built around one soft rule: your writing stays calm, structured, and private unless you choose to share it. 🌙
+arKive is a private writing and journaling application designed to keep personal thoughts, drafts, and memories organized in one place.
+
+It combines a distraction-free writing experience with privacy-focused features, flexible organization, and selective sharing. 
+
+## Screenshots
+
+![Login](screenshots/login.png)
+
+![Home](screenshots/home.png)
+
+![People](screenshots/people.png)
+
+![Profile Update](screenshots/profile_update.png)
+
+![Profile Menu](screenshots/profile_menu.png)
+
+## Features
+
+- **Rich Text and Markdown:** Write using TipTap rich text editing or Markdown, with support for drafts and embedded images.
+- **Private Entries:** Protect sensitive entries using client-side PBKDF2 key derivation and AES-GCM encryption.
+- **Spaces:** Organize entries into separate collections.
+- **Selective Sharing:** Share spaces with specific users or through invitation links.
+- **Tags:** Categorize entries using customizable, color-coded tags.
+- **Calendar View:** Browse entries through a yearly calendar.
+- **Pinned Entries:** Keep important notes easily accessible.
+- **Search:** Quickly find entries across your archive.
+- **Keyboard Shortcuts:** Navigate and create entries without relying entirely on the mouse.
+- **Data Portability:** Export and import your archive through JSON.
+
+## Technology Stack
+
+| Component | Technology |
+|---|---|
+| Frontend | React 19, TypeScript, Vite |
+| Rich Text Editor | TipTap |
+| Backend | Cloudflare Pages Functions, Hono |
+| Database | Cloudflare D1 (SQLite) |
+| Authentication | PBKDF2, JWT |
+| OAuth | Google OAuth 2.0 (PKCE) |
+| Encryption | Web Crypto API (AES-GCM) |
+| Hosting | Cloudflare Pages |
+
+## Keyboard Shortcuts
+
+| Shortcut | Action |
+|---|---|
+| `Ctrl + K` | Create a new entry |
+| `/` | Search |
+| `g` then `h` | Go to Home |
+| `g` then `c` | Open Calendar |
+
+## Privacy
+
+Privacy is a central design consideration in arKive.
+
+- Sensitive entries can be encrypted client-side before storage.
+- Selective sharing keeps access under the user's control.
+- Authentication is handled by the application's backend.
+- Data can be exported at any time.
+
+## Infrastructure
+
+arKive runs on Cloudflare Pages, Pages Functions, and D1, using the Cloudflare Free Tier without requiring external database hosting or paid storage services.
+
+## Author
+
+**Kartikeya**
+
+[GitHub](https://github.com/k-artik-k)
 
 ---
 
-## ✨ Glimpse
-
-![login](screenshots/login.png)
-
-![home](screenshots/home.png)
-
-![people](screenshots/people.png)
-
-![profile update](screenshots/profile_update.png)
-
-![profile menu](screenshots/profile_menu.png)
-
----
-
-## 🌿 What lives inside
-
-- **Write your way** — switch between rich text and markdown, save half-formed thoughts as drafts, and drop images right into entries.
-- **Passphrase lock** — lock sensitive posts client-side (PBKDF2 + AES-GCM) so even a shared database stays unreadable without your passphrase. 🔐
-- **Spaces & gentle sharing** — group entries into private collections, invite specific usernames, or share a space link without making anything public.
-- **Tags & calendar view** — color-coded pills and a yearly calendar grid that automatically links dated diary titles. 📅
-- **Pinned rail** — keep favorite or important notes pinned at the top without cluttering your main feed.
-- **No social noise** — zero likes, zero "who viewed your post", zero algorithms.
-- **Yours to keep** — full JSON export & import anytime.
-
----
-
-## ⚡ Core experience
-
-The app stays out of your way.
-
-Navigation is minimal and keyboard-friendly (`Ctrl+K` to write, `/` to search, `g h` for home, `g c` for calendar). Everything revolves around ownership, calm typography, and quiet focus.
-
----
-
-## 🛠️ Tech
-
-- **Frontend:** React 19 + Vite + TipTap
-- **Backend & Storage:** Cloudflare Pages Functions (Hono) + Cloudflare D1 (SQLite + media storage)
-- **Auth:** Email/password (PBKDF2 + JWT) & server-side Google OAuth (PKCE)
-
----
-
-## 🔗 Live
-
-**[https://arkive-3jb.pages.dev](https://arkive-3jb.pages.dev)**
-
----
-
-## 💭 Why this exists
-
-Most writing apps either get bloated or push everything toward being public.
-
-**arKive** started as a personal full-stack project to keep writing minimal as entries grow, while still handling real-life needs like private collections, encryption, and selective sharing.
-
----
-
-## ✍️ Author
-
-Kartikeya...
+*Built to keep personal writing personal.*
