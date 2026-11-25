@@ -1,91 +1,83 @@
+<div align="center">
+
+<img src="public/logoooo1.png" alt="arKive" width="64" />
+
 # arKive
 
-A private, encrypted archive and writing space — running 100% on the **Cloudflare Free Tier** (Cloudflare Pages + Pages Functions + D1).
+*a quiet, private corner for your thoughts, drafts, and shared memories.* 🕯️✨
 
-## Features
+[![Live App](https://img.shields.io/badge/live-arkive--3jb.pages.dev-b94d3f?style=flat-square)](https://arkive-3jb.pages.dev)
+[![Hosted on Cloudflare](https://img.shields.io/badge/cloudflare-pages%20%2B%20d1-f38020?style=flat-square&logo=cloudflare&logoColor=white)](https://arkive-3jb.pages.dev)
+[![React](https://img.shields.io/badge/react-19-131619?style=flat-square&logo=react)](https://react.dev)
 
-- Rich text (TipTap) and Markdown writing modes with drafts and pinning
-- Spaces for organizing entries and selective sharing by username + invite link
-- Client-side passphrase locking (PBKDF2 + AES-GCM) for sensitive posts
-- Color-coded tags and yearly calendar view
-- Image uploads (stored in Cloudflare D1 automatically, or R2 if enabled)
-- Full JSON export and import
-- Keyboard shortcuts (`Ctrl+K` to create, `/` to search, `g h` home, `g c` calendar)
+[**Open arKive →**](https://arkive-3jb.pages.dev)
+
+</div>
 
 ---
 
-## Deploy to Cloudflare (Free Tier, No Credit Card Needed)
+Replace messy notes, scattered tabs, and noisy social writing apps with a space that actually feels personal.
 
-### 1. Install dependencies & log in to Cloudflare
-```bash
-npm install
-npx wrangler login
-```
-
-### 2. Create your free Cloudflare D1 database
-```bash
-npx wrangler d1 create arkive-db
-```
-Copy the `database_id` printed in the terminal and paste it into `wrangler.toml`:
-```toml
-database_id = "YOUR_COPIED_DATABASE_ID"
-```
-
-### 3. Apply the database schema
-```bash
-npm run db:migrate:remote
-```
-
-### 4. Set your JWT secret & deploy
-```bash
-npm run deploy
-npx wrangler pages secret put JWT_SECRET
-npm run deploy
-```
-> Cloudflare Pages applies secrets only to **new deployments**, so always run `npm run deploy` again after adding or updating `JWT_SECRET`. When prompted, paste any long random string (e.g. 32+ random characters). Do **not** commit this secret to git.
-
-After deploying, open your `*.pages.dev` URL!
-
-### 5. (Optional) Enable Google Sign-In
-In Google Cloud Console → **APIs & Services → Credentials → Create OAuth client ID** (Web application):
-- **Authorized redirect URI:** `https://YOUR-SITE.pages.dev/api/auth/google/callback`
-
-Then add your Google secrets server-side (never in client code or git) and redeploy:
-```bash
-npx wrangler pages secret put GOOGLE_CLIENT_ID
-npx wrangler pages secret put GOOGLE_CLIENT_SECRET
-npm run deploy
-```
+**arKive** is built around one soft rule: your writing stays calm, structured, and private unless you choose to share it. 🌙
 
 ---
 
-## Migrating Existing Data from Supabase
+## ✨ Glimpse
 
-1. In Supabase Dashboard, go to **Project Settings → API** and copy your **Project URL** and **`service_role` (secret)** key.
-2. Export every table, user, and uploaded image locally:
-   ```powershell
-   $env:SUPABASE_URL="https://your-project.supabase.co"
-   $env:SUPABASE_SERVICE_KEY="your-service-role-key"
-   node scripts/export-supabase.mjs
-   ```
-3. Generate the Cloudflare D1 import SQL (choose a temporary password so you can sign in right away):
-   ```powershell
-   $env:MIGRATION_PASSWORD="TempPassword123"
-   node scripts/import-to-d1.mjs
-   ```
-4. Apply the data to your D1 database:
-   ```bash
-   npx wrangler d1 execute arkive-db --remote --file=migration-import.sql
-   ```
-5. Sign in with your email + `TempPassword123`, then update your password under **Profile** settings.
+![login](screenshots/login.png)
+
+![home](screenshots/home.png)
+
+![people](screenshots/people.png)
+
+![profile update](screenshots/profile_update.png)
+
+![profile menu](screenshots/profile_menu.png)
 
 ---
 
-## Local Development
+## 🌿 What lives inside
 
-```bash
-cp .dev.vars.example .dev.vars
-npm run db:migrate:local
-npm run build
-npm run dev:cf
-```
+- **Write your way** — switch between rich text and markdown, save half-formed thoughts as drafts, and drop images right into entries.
+- **Passphrase lock** — lock sensitive posts client-side (PBKDF2 + AES-GCM) so even a shared database stays unreadable without your passphrase. 🔐
+- **Spaces & gentle sharing** — group entries into private collections, invite specific usernames, or share a space link without making anything public.
+- **Tags & calendar view** — color-coded pills and a yearly calendar grid that automatically links dated diary titles. 📅
+- **Pinned rail** — keep favorite or important notes pinned at the top without cluttering your main feed.
+- **No social noise** — zero likes, zero "who viewed your post", zero algorithms.
+- **Yours to keep** — full JSON export & import anytime.
+
+---
+
+## ⚡ Core experience
+
+The app stays out of your way.
+
+Navigation is minimal and keyboard-friendly (`Ctrl+K` to write, `/` to search, `g h` for home, `g c` for calendar). Everything revolves around ownership, calm typography, and quiet focus.
+
+---
+
+## 🛠️ Tech
+
+- **Frontend:** React 19 + Vite + TipTap
+- **Backend & Storage:** Cloudflare Pages Functions (Hono) + Cloudflare D1 (SQLite + media storage)
+- **Auth:** Email/password (PBKDF2 + JWT) & server-side Google OAuth (PKCE)
+
+---
+
+## 🔗 Live
+
+**[https://arkive-3jb.pages.dev](https://arkive-3jb.pages.dev)**
+
+---
+
+## 💭 Why this exists
+
+Most writing apps either get bloated or push everything toward being public.
+
+**arKive** started as a personal full-stack project to keep writing minimal as entries grow, while still handling real-life needs like private collections, encryption, and selective sharing.
+
+---
+
+## ✍️ Author
+
+Kartikeya...
