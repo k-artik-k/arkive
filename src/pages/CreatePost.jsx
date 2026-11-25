@@ -19,9 +19,7 @@ export default function CreatePost() {
   const appliedSpaceRef = useRef('');
 
   const [title, setTitle] = useState('');
-  const [subtitle, setSubtitle] = useState('');
   const [body, setBody] = useState('');
-  const [isMarkdown, setIsMarkdown] = useState(false);
   const [selectedTags, setSelectedTags] = useState([]);
   const [allTags, setAllTags] = useState([]);
   const [allSpaces, setAllSpaces] = useState([]);
@@ -57,7 +55,6 @@ export default function CreatePost() {
     };
   }, [user]);
 
-  // Apply space's linked tag once when the selected space changes
   useEffect(() => {
     if (!selectedSpaceId || allTags.length === 0 || allSpaces.length === 0) return;
     if (appliedSpaceRef.current === selectedSpaceId) return;
@@ -113,7 +110,7 @@ export default function CreatePost() {
     setSaving(true);
     setSaveError('');
 
-    const sanitizedBody = isMarkdown ? body : sanitizeHTML(body);
+    const sanitizedBody = sanitizeHTML(body);
     const diaryDate = parseDiaryDate(title);
 
     let passphraseHash = null;
@@ -128,9 +125,9 @@ export default function CreatePost() {
 
       await apiCreatePost({
         title: title.trim(),
-        subtitle: subtitle.trim(),
+        subtitle: '',
         body: passphraseHash ? '' : sanitizedBody,
-        is_markdown: isMarkdown,
+        is_markdown: false,
         is_draft: isDraft,
         passphrase_hash: passphraseHash,
         encrypted_body: encryptedBody,
@@ -205,24 +202,16 @@ export default function CreatePost() {
           </div>
         )}
 
-        <input
-          className="create-post-title-input"
-          type="text"
-          placeholder="Title"
-          value={title}
-          onChange={(e) => {
-            setTitle(e.target.value);
-            setSaveError('');
-          }}
-        />
-
-        <div className="create-post-subtitle-row">
+        <div className="create-post-title-row">
           <input
-            className="create-post-subtitle-input"
+            className="create-post-title-input"
             type="text"
-            placeholder="Short note"
-            value={subtitle}
-            onChange={(e) => setSubtitle(e.target.value)}
+            placeholder="Title"
+            value={title}
+            onChange={(e) => {
+              setTitle(e.target.value);
+              setSaveError('');
+            }}
           />
 
           <div className="create-post-tags-dropdown" ref={tagDropdownRef}>
@@ -272,8 +261,6 @@ export default function CreatePost() {
           <RichTextEditor
             content={body}
             onChange={setBody}
-            isMarkdown={isMarkdown}
-            onToggleMode={setIsMarkdown}
             placeholder="Write..."
           />
         </div>

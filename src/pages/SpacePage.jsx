@@ -4,6 +4,7 @@ import { apiGetSpace, apiGetSpacePosts } from '../api';
 import { useAuth } from '../contexts/AuthContext';
 import PostCard from '../components/PostCard';
 import PinnedPostsRail from '../components/PinnedPostsRail';
+import TagPill from '../components/TagPill';
 import ErrorPage from './ErrorPage';
 import { getSharedSpaceUrl } from '../utils/appLinks';
 import { sortPostsByCreatedAt } from '../utils/postOrdering';
@@ -21,7 +22,14 @@ export default function SpacePage() {
   const [page, setPage] = useState(0);
   const [error, setError] = useState('');
   const [copied, setCopied] = useState(false);
+  const [selectedTag, setSelectedTag] = useState(null);
   const loadingRef = useRef(null);
+
+  const activeTagId = selectedTag?.id || '';
+
+  useEffect(() => {
+    setSelectedTag(null);
+  }, [id]);
 
   useEffect(() => {
     if (!user) return undefined;
@@ -39,7 +47,7 @@ export default function SpacePage() {
         const [{ space: spaceData }, { posts: postData = [], pinnedPosts: pinnedData = [], hasMore: more = false }] =
           await Promise.all([
             apiGetSpace(id),
-            apiGetSpacePosts(id, { page: 0 }),
+            apiGetSpacePosts(id, { page: 0, tag: activeTagId }),
           ]);
 
         if (cancelled) return;
@@ -59,7 +67,7 @@ export default function SpacePage() {
     return () => {
       cancelled = true;
     };
-  }, [id, user]);
+  }, [id, user, activeTagId]);
 
   useEffect(() => {
     if (!loadingRef.current || !space) return undefined;
@@ -70,7 +78,7 @@ export default function SpacePage() {
         const nextPage = page + 1;
         setPage(nextPage);
         setLoading(true);
-        apiGetSpacePosts(id, { page: nextPage })
+        apiGetSpacePosts(id, { page: nextPage, tag: activeTagId })
           .then(({ posts: data = [], hasMore: more = false }) => {
             if (cancelled) return;
             setPosts((prev) => [...prev, ...data]);
@@ -91,7 +99,7 @@ export default function SpacePage() {
       cancelled = true;
       observer.disconnect();
     };
-  }, [hasMore, loading, page, id, space]);
+  }, [hasMore, loading, page, id, space, activeTagId]);
 
   useEffect(() => {
     if (!copied) return undefined;
@@ -205,6 +213,17 @@ export default function SpacePage() {
       />
 
       <div className="space-page-feed">
+        {selectedTag && (
+          <div className="feed-filters">
+            <TagPill
+              name={selectedTag.name}
+              pillColor={selectedTag.pill_color}
+              textColor={selectedTag.text_color}
+              onRemove={() => setSelectedTag(null)}
+            />
+          </div>
+        )}
+
         {posts.map((post, index) => (
           <div key={post.id}>
             <PostCard
@@ -212,6 +231,7 @@ export default function SpacePage() {
               tags={getPostTags(post)}
               onDeleted={handlePostDeleted}
               onUpdated={handlePostUpdated}
+              onTagClick={(tag) => setSelectedTag((prev) => (prev?.id === tag.id ? null : tag))}
             />
             {index < posts.length - 1 && <hr className="post-separator" />}
           </div>
@@ -220,8 +240,14 @@ export default function SpacePage() {
         {!loading && posts.length === 0 && (
           <div className="space-page-empty">
             <h2>No posts yet</h2>
-            <p>{isOwner ? 'Start with a new post.' : 'Nothing shared here yet.'}</p>
-            {isOwner && (
+            <p>
+              {selectedTag
+                ? `No posts tagged "${selectedTag.name}".`
+                : isOwner
+                  ? 'Start with a new post.'
+                  : 'Nothing shared here yet.'}
+            </p>
+            {isOwner && !selectedTag && (
               <button className="btn btn-primary" onClick={() => navigate(`/create?space=${id}`)}>
                 New Post
               </button>

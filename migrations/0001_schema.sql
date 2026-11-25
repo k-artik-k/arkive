@@ -86,6 +86,13 @@ CREATE TABLE IF NOT EXISTS media_chunks (
   PRIMARY KEY (key, idx)
 );
 
+CREATE TABLE IF NOT EXISTS auth_rate_limits (
+  key TEXT PRIMARY KEY,
+  attempts INTEGER NOT NULL,
+  window_start INTEGER NOT NULL,
+  blocked_until INTEGER NOT NULL DEFAULT 0
+);
+
 -- Indexes
 CREATE INDEX IF NOT EXISTS idx_posts_user_id ON posts(user_id);
 CREATE INDEX IF NOT EXISTS idx_posts_created_at ON posts(created_at DESC);

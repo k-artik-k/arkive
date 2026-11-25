@@ -12,36 +12,10 @@ const ALLOWED_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp', 'image/g
 export default function RichTextEditor({
   content,
   onChange,
-  isMarkdown,
-  onToggleMode,
-  allowModeToggle = true,
   placeholder = 'Start writing...',
 }) {
   const [uploadError, setUploadError] = useState('');
   const [uploading, setUploading] = useState(false);
-
-  function renderModeToggle(markdownActive) {
-    if (!allowModeToggle) return null;
-    return (
-      <div className={`editor-mode-toggle ${markdownActive ? 'markdown' : 'rich'}`}>
-        <span className="editor-mode-thumb" />
-        <button
-          type="button"
-          className={`editor-mode-option ${!markdownActive ? 'active' : ''}`}
-          onClick={() => onToggleMode?.(false)}
-        >
-          RT
-        </button>
-        <button
-          type="button"
-          className={`editor-mode-option ${markdownActive ? 'active' : ''}`}
-          onClick={() => onToggleMode?.(true)}
-        >
-          MD
-        </button>
-      </div>
-    );
-  }
 
   const editor = useEditor({
     extensions: [
@@ -58,12 +32,12 @@ export default function RichTextEditor({
   });
 
   useEffect(() => {
-    if (!editor || isMarkdown) return;
+    if (!editor) return;
     const nextContent = content || '';
     if (nextContent !== editor.getHTML()) {
       editor.commands.setContent(nextContent, false);
     }
-  }, [content, editor, isMarkdown]);
+  }, [content, editor]);
 
   async function handleImageUpload(e) {
     const file = e.target.files?.[0];
@@ -85,24 +59,6 @@ export default function RichTextEditor({
     } finally {
       setUploading(false);
     }
-  }
-
-  if (isMarkdown) {
-    return (
-      <div className="rich-editor-wrapper">
-        <div className="rich-editor-toolbar">
-          <div className="toolbar-right">
-            {renderModeToggle(true)}
-          </div>
-        </div>
-        <textarea
-          className="markdown-editor-textarea"
-          value={content || ''}
-          onChange={(e) => onChange(e.target.value)}
-          placeholder={placeholder}
-        />
-      </div>
-    );
   }
 
   if (!editor) return null;
@@ -198,10 +154,6 @@ export default function RichTextEditor({
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2" /><circle cx="8.5" cy="8.5" r="1.5" /><path d="M21 15l-5-5L5 21" /></svg>
           <input type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/avif" onChange={handleImageUpload} disabled={uploading} />
         </button>
-
-        <div className="toolbar-right">
-          {renderModeToggle(false)}
-        </div>
       </div>
       {uploadError && (
         <div style={{ color: 'var(--danger)', fontSize: 12, padding: '6px 12px', borderBottom: '1px solid var(--border)' }}>

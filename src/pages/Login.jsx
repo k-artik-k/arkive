@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useNavigate, Link, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import './Login.css';
@@ -15,7 +15,7 @@ function GoogleIcon() {
 }
 
 export default function Login() {
-  const { signIn, signInWithGoogle, completeOAuthLogin } = useAuth();
+  const { signIn, signInWithGoogle } = useAuth();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const rawRedirect = searchParams.get('redirect') || '/';
@@ -24,26 +24,7 @@ export default function Login() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState(urlError);
-  const [loading, setLoading] = useState(() => {
-    const hash = window.location.hash.replace(/^#/, '');
-    return Boolean(new URLSearchParams(hash).get('token'));
-  });
-
-  useEffect(() => {
-    const hash = window.location.hash.replace(/^#/, '');
-    if (!hash) return;
-    const params = new URLSearchParams(hash);
-    const oauthToken = params.get('token');
-    if (!oauthToken) return;
-
-    const hashRedirect = params.get('redirect') || '/';
-    const safeNext = hashRedirect.startsWith('/') && !hashRedirect.startsWith('//') ? hashRedirect : '/';
-    window.history.replaceState(null, '', window.location.pathname + window.location.search);
-
-    completeOAuthLogin(oauthToken).then(() => {
-      navigate(safeNext, { replace: true });
-    });
-  }, [completeOAuthLogin, navigate]);
+  const [loading, setLoading] = useState(false);
 
   async function handleSubmit(e) {
     e.preventDefault();

@@ -7,7 +7,11 @@ const PAGE_SIZE = 20;
 const JWT_EXPIRY_SECONDS = 30 * 24 * 60 * 60; // 30 days
 const PBKDF2_ITERATIONS = 100000;
 const R2_MAX_IMAGE_BYTES = 5 * 1024 * 1024; // 5 MB
-const D1_MAX_IMAGE_BYTES = 750 * 1024; // 750 KB fallback when R2 is not bound
+const D1_MAX_IMAGE_BYTES = 2 * 1024 * 1024; // 2 MB (chunked in D1 when > 200 KB)
+const D1_CHUNK_BYTES = 200 * 1024;
+const SESSION_COOKIE = 'arkive_session';
+const RATE_LIMIT_WINDOW_SEC = 15 * 60; // 15 minutes
+const RATE_LIMIT_MAX_ATTEMPTS = 10;
 
 const ALLOWED_IMAGE_TYPES = {
   'image/png': 'png',
@@ -144,10 +148,6 @@ async function verifyJwt(token, secret) {
 
 // ── Query & Formatting Helpers ──
 
-function escapeLike(str) {
-  return str.replace(/[\\%_]/g, '\\$&');
-}
-
 function nowIso() {
   return new Date().toISOString();
 }
@@ -270,16 +270,86 @@ app.use('*', async (c, next) => {
   await next();
 });
 
+function buildSessionCookie(token, isHttps, maxAge = JWT_EXPIRY_SECONDS) {
+  const parts = [
+    `${SESSION_COOKIE}=${encodeURIComponent(token)}`,
+    'Path=/',
+    'HttpOnly',
+    'SameSite=Lax',
+    `Max-Age=${maxAge}`,
+  ];
+  if (isHttps) parts.push('Secure');
+  return parts.join('; ');
+}
+
+function getClientIp(c) {
+  return (
+    c.req.header('CF-Connecting-IP') ||
+    (c.req.header('x-forwarded-for') || '').split(',')[0].trim() ||
+    'local'
+  );
+}
+
+async function checkAuthRateLimit(db, action, ip) {
+  const key = `${action}:${ip}`;
+  const now = Math.floor(Date.now() / 1000);
+  try {
+    const row = await db.prepare('SELECT * FROM auth_rate_limits WHERE key = ?').bind(key).first();
+    if (!row) {
+      await db
+        .prepare('INSERT INTO auth_rate_limits (key, attempts, window_start, blocked_until) VALUES (?, 1, ?, 0)')
+        .bind(key, now)
+        .run();
+      return { allowed: true };
+    }
+    if (row.blocked_until > now) {
+      return { allowed: false, retryAfter: row.blocked_until - now };
+    }
+    if (now - row.window_start > RATE_LIMIT_WINDOW_SEC) {
+      await db
+        .prepare('UPDATE auth_rate_limits SET attempts = 1, window_start = ?, blocked_until = 0 WHERE key = ?')
+        .bind(now, key)
+        .run();
+      return { allowed: true };
+    }
+    const nextAttempts = row.attempts + 1;
+    const blockedUntil = nextAttempts > RATE_LIMIT_MAX_ATTEMPTS ? now + RATE_LIMIT_WINDOW_SEC : 0;
+    await db
+      .prepare('UPDATE auth_rate_limits SET attempts = ?, blocked_until = ? WHERE key = ?')
+      .bind(nextAttempts, blockedUntil, key)
+      .run();
+    return blockedUntil > now ? { allowed: false, retryAfter: RATE_LIMIT_WINDOW_SEC } : { allowed: true };
+  } catch {
+    return { allowed: true };
+  }
+}
+
+async function clearAuthRateLimit(db, action, ip) {
+  try {
+    await db.prepare('DELETE FROM auth_rate_limits WHERE key = ?').bind(`${action}:${ip}`).run();
+  } catch {
+    // non-fatal
+  }
+}
+
 async function requireAuth(c, next) {
   const secret = c.env?.JWT_SECRET;
   if (!secret) {
     return c.json({ error: 'Server misconfigured: JWT_SECRET secret is not set.' }, 500);
   }
-  const authHeader = c.req.header('Authorization') || '';
-  if (!authHeader.startsWith('Bearer ')) {
+
+  const cookies = parseCookies(c.req.header('Cookie') || '');
+  let token = cookies[SESSION_COOKIE] || '';
+  if (!token) {
+    const authHeader = c.req.header('Authorization') || '';
+    if (authHeader.startsWith('Bearer ')) {
+      token = authHeader.slice(7).trim();
+    }
+  }
+
+  if (!token) {
     return c.json({ error: 'Authentication required' }, 401);
   }
-  const token = authHeader.slice(7).trim();
   const userId = await verifyJwt(token, secret).catch(() => null);
   if (!userId) {
     return c.json({ error: 'Invalid or expired session' }, 401);
@@ -374,6 +444,12 @@ app.post('/auth/register', async (c) => {
   }
 
   const db = c.env.DB;
+  const ip = getClientIp(c);
+  const rate = await checkAuthRateLimit(db, 'register', ip);
+  if (!rate.allowed) {
+    return c.json({ error: 'Too many signup attempts. Try again in a few minutes.' }, 429);
+  }
+
   const existingEmail = await db.prepare('SELECT id FROM users WHERE LOWER(email) = LOWER(?)').bind(email).first();
   if (existingEmail) {
     return c.json({ error: 'An account with this email already exists' }, 409);
@@ -401,9 +477,10 @@ app.post('/auth/register', async (c) => {
   ]);
 
   const token = await signJwt(userId, secret);
+  const isHttps = new URL(c.req.url).protocol === 'https:';
+  c.header('Set-Cookie', buildSessionCookie(token, isHttps));
   return c.json(
     {
-      token,
       user: { id: userId, email },
       profile: { id: userId, username, display_name: username, avatar_url: null, created_at: createdAt },
     },
@@ -426,6 +503,12 @@ app.post('/auth/login', async (c) => {
   }
 
   const db = c.env.DB;
+  const ip = getClientIp(c);
+  const rate = await checkAuthRateLimit(db, 'login', ip);
+  if (!rate.allowed) {
+    return c.json({ error: 'Too many sign-in attempts. Try again in a few minutes.' }, 429);
+  }
+
   const userRow = await db.prepare('SELECT * FROM users WHERE LOWER(email) = LOWER(?)').bind(email).first();
   if (!userRow) {
     return c.json({ error: 'Invalid email or password' }, 401);
@@ -449,14 +532,22 @@ app.post('/auth/login', async (c) => {
     return c.json({ error: 'Invalid email or password' }, 401);
   }
 
+  await clearAuthRateLimit(db, 'login', ip);
   const profile = await db.prepare('SELECT * FROM profiles WHERE id = ?').bind(userRow.id).first();
   const token = await signJwt(userRow.id, secret);
+  const isHttps = new URL(c.req.url).protocol === 'https:';
+  c.header('Set-Cookie', buildSessionCookie(token, isHttps));
 
   return c.json({
-    token,
     user: { id: userRow.id, email: userRow.email },
     profile: profile || null,
   });
+});
+
+app.post('/auth/logout', async (c) => {
+  const isHttps = new URL(c.req.url).protocol === 'https:';
+  c.header('Set-Cookie', buildSessionCookie('', isHttps, 0));
+  return c.json({ ok: true });
 });
 
 function sanitizeRedirect(raw) {
@@ -686,15 +777,11 @@ app.get('/auth/google/callback', async (c) => {
   }
 
   const jwt = await signJwt(userId, jwtSecret);
-  const hashParams = new URLSearchParams({
-    token: jwt,
-    redirect: sanitizeRedirect(stateData.redirect),
-  });
-
   const headers = new Headers({
-    Location: `${origin}/login#${hashParams.toString()}`,
+    Location: `${origin}${sanitizeRedirect(stateData.redirect)}`,
   });
   headers.append('Set-Cookie', clearCookie);
+  headers.append('Set-Cookie', buildSessionCookie(jwt, isHttps));
   return new Response(null, { status: 302, headers });
 });
 
@@ -741,6 +828,8 @@ app.delete('/auth/account', requireAuth, async (c) => {
   stmts.push(db.prepare('DELETE FROM users WHERE id = ?').bind(userId));
   await db.batch(stmts);
 
+  const isHttps = new URL(c.req.url).protocol === 'https:';
+  c.header('Set-Cookie', buildSessionCookie('', isHttps, 0));
   return c.json({ ok: true });
 });
 
@@ -825,14 +914,23 @@ app.get('/posts', requireAuth, async (c) => {
   const userId = c.get('userId');
   const page = Math.max(0, parseInt(c.req.query('page') || '0', 10) || 0);
   const search = (c.req.query('search') || '').trim();
+  const tagId = (c.req.query('tag') || '').trim();
+  const draftsOnly = c.req.query('drafts') === '1';
 
   let sql = 'SELECT * FROM posts WHERE user_id = ?';
   const params = [userId];
 
+  if (draftsOnly) {
+    sql += ' AND is_draft = 1';
+  }
+  if (tagId) {
+    sql += ' AND id IN (SELECT post_id FROM post_tags WHERE tag_id = ?)';
+    params.push(tagId);
+  }
   if (search) {
-    const pattern = `%${escapeLike(search)}%`;
-    sql += " AND (title LIKE ? ESCAPE '\\' OR subtitle LIKE ? ESCAPE '\\')";
-    params.push(pattern, pattern);
+    sql +=
+      ' AND (instr(LOWER(title), LOWER(?)) > 0 OR instr(LOWER(subtitle), LOWER(?)) > 0 OR (passphrase_hash IS NULL AND instr(LOWER(body), LOWER(?)) > 0))';
+    params.push(search, search, search);
   }
 
   sql += ' ORDER BY created_at DESC LIMIT ? OFFSET ?';
@@ -849,14 +947,23 @@ app.get('/posts', requireAuth, async (c) => {
 app.get('/posts/pinned', requireAuth, async (c) => {
   const userId = c.get('userId');
   const search = (c.req.query('search') || '').trim();
+  const tagId = (c.req.query('tag') || '').trim();
+  const draftsOnly = c.req.query('drafts') === '1';
 
   let sql = 'SELECT * FROM posts WHERE user_id = ? AND is_pinned = 1';
   const params = [userId];
 
+  if (draftsOnly) {
+    sql += ' AND is_draft = 1';
+  }
+  if (tagId) {
+    sql += ' AND id IN (SELECT post_id FROM post_tags WHERE tag_id = ?)';
+    params.push(tagId);
+  }
   if (search) {
-    const pattern = `%${escapeLike(search)}%`;
-    sql += " AND (title LIKE ? ESCAPE '\\' OR subtitle LIKE ? ESCAPE '\\')";
-    params.push(pattern, pattern);
+    sql +=
+      ' AND (instr(LOWER(title), LOWER(?)) > 0 OR instr(LOWER(subtitle), LOWER(?)) > 0 OR (passphrase_hash IS NULL AND instr(LOWER(body), LOWER(?)) > 0))';
+    params.push(search, search, search);
   }
 
   sql += ' ORDER BY created_at DESC';
@@ -1094,15 +1201,53 @@ app.put('/posts/:id', requireAuth, async (c) => {
   return c.json({ post: enriched });
 });
 
+function extractOwnedImageKeys(bodyText, userId) {
+  if (!bodyText || typeof bodyText !== 'string') return [];
+  const keys = new Set();
+  const prefix = `/api/images/serve/${userId}/`;
+  const re = /\/api\/images\/serve\/([^"'\s)<>]+)/g;
+  let match;
+  while ((match = re.exec(bodyText)) !== null) {
+    const full = match[1];
+    if (full && `${'/api/images/serve/'}${full}`.startsWith(prefix)) {
+      keys.add(full);
+    }
+  }
+  return [...keys];
+}
+
 app.delete('/posts/:id', requireAuth, async (c) => {
   const userId = c.get('userId');
   const postId = c.req.param('id');
-  const res = await c.env.DB.prepare('DELETE FROM posts WHERE id = ? AND user_id = ?')
+  const db = c.env.DB;
+
+  const existing = await db.prepare('SELECT id, body FROM posts WHERE id = ? AND user_id = ?')
     .bind(postId, userId)
-    .run();
-  if (!res.meta?.changes) {
+    .first();
+  if (!existing) {
     return c.json({ error: 'Post not found' }, 404);
   }
+
+  await db.prepare('DELETE FROM posts WHERE id = ? AND user_id = ?').bind(postId, userId).run();
+
+  const imageKeys = extractOwnedImageKeys(existing.body, userId);
+  for (const key of imageKeys) {
+    const stillUsed = await db
+      .prepare('SELECT id FROM posts WHERE user_id = ? AND instr(body, ?) > 0 LIMIT 1')
+      .bind(userId, `/api/images/serve/${key}`)
+      .first();
+    if (!stillUsed) {
+      if (c.env.IMAGES) {
+        try {
+          await c.env.IMAGES.delete(key);
+        } catch {
+          // ignore R2 delete error
+        }
+      }
+      await db.prepare('DELETE FROM media WHERE key = ? AND user_id = ?').bind(key, userId).run();
+    }
+  }
+
   return c.json({ ok: true });
 });
 
@@ -1363,6 +1508,7 @@ app.get('/spaces/:id/posts', requireAuth, async (c) => {
   const userId = c.get('userId');
   const spaceId = c.req.param('id');
   const page = Math.max(0, parseInt(c.req.query('page') || '0', 10) || 0);
+  const tagId = (c.req.query('tag') || '').trim();
   const db = c.env.DB;
 
   const space = await db.prepare('SELECT id, user_id FROM spaces WHERE id = ?').bind(spaceId).first();
@@ -1370,15 +1516,16 @@ app.get('/spaces/:id/posts', requireAuth, async (c) => {
     return c.json({ error: 'Space not available' }, 404);
   }
 
-  const { results: rows } = await db
-    .prepare(
-      `SELECT * FROM posts
-       WHERE space_id = ? AND (is_draft = 0 OR user_id = ?)
-       ORDER BY created_at DESC
-       LIMIT ? OFFSET ?`
-    )
-    .bind(spaceId, userId, PAGE_SIZE + 1, page * PAGE_SIZE)
-    .all();
+  let postSql = 'SELECT * FROM posts WHERE space_id = ? AND (is_draft = 0 OR user_id = ?)';
+  const postParams = [spaceId, userId];
+  if (tagId) {
+    postSql += ' AND id IN (SELECT post_id FROM post_tags WHERE tag_id = ?)';
+    postParams.push(tagId);
+  }
+  postSql += ' ORDER BY created_at DESC LIMIT ? OFFSET ?';
+  postParams.push(PAGE_SIZE + 1, page * PAGE_SIZE);
+
+  const { results: rows } = await db.prepare(postSql).bind(...postParams).all();
 
   const postRows = rows || [];
   const hasMore = postRows.length > PAGE_SIZE;
@@ -1386,14 +1533,15 @@ app.get('/spaces/:id/posts', requireAuth, async (c) => {
 
   let pinnedPosts = [];
   if (page === 0) {
-    const { results: pinnedRows } = await db
-      .prepare(
-        `SELECT * FROM posts
-         WHERE space_id = ? AND is_pinned = 1 AND (is_draft = 0 OR user_id = ?)
-         ORDER BY created_at DESC`
-      )
-      .bind(spaceId, userId)
-      .all();
+    let pinnedSql = 'SELECT * FROM posts WHERE space_id = ? AND is_pinned = 1 AND (is_draft = 0 OR user_id = ?)';
+    const pinnedParams = [spaceId, userId];
+    if (tagId) {
+      pinnedSql += ' AND id IN (SELECT post_id FROM post_tags WHERE tag_id = ?)';
+      pinnedParams.push(tagId);
+    }
+    pinnedSql += ' ORDER BY created_at DESC';
+
+    const { results: pinnedRows } = await db.prepare(pinnedSql).bind(...pinnedParams).all();
     pinnedPosts = await enrichPosts(db, pinnedRows || []);
   }
 
@@ -1634,13 +1782,30 @@ app.post('/images', requireAuth, async (c) => {
   } else {
     if (buffer.byteLength > D1_MAX_IMAGE_BYTES) {
       return c.json(
-        { error: 'Image exceeds 750 KB limit (enable R2 storage in wrangler.toml for up to 5 MB images)' },
+        { error: 'Image must be 2 MB or smaller (or enable R2 storage for up to 5 MB)' },
         400
       );
     }
-    await c.env.DB.prepare('INSERT INTO media (key, user_id, content_type, data) VALUES (?, ?, ?, ?)')
-      .bind(key, userId, file.type, new Uint8Array(buffer))
-      .run();
+    const bytes = new Uint8Array(buffer);
+    if (bytes.byteLength <= D1_CHUNK_BYTES) {
+      await c.env.DB.prepare('INSERT INTO media (key, user_id, content_type, data) VALUES (?, ?, ?, ?)')
+        .bind(key, userId, file.type, bytes)
+        .run();
+    } else {
+      const stmts = [
+        c.env.DB.prepare('INSERT INTO media (key, user_id, content_type, data) VALUES (?, ?, ?, ?)')
+          .bind(key, userId, file.type, new Uint8Array(0)),
+      ];
+      let idx = 0;
+      for (let offset = 0; offset < bytes.byteLength; offset += D1_CHUNK_BYTES) {
+        stmts.push(
+          c.env.DB.prepare('INSERT INTO media_chunks (key, idx, data) VALUES (?, ?, ?)')
+            .bind(key, idx, bytes.subarray(offset, offset + D1_CHUNK_BYTES))
+        );
+        idx++;
+      }
+      await c.env.DB.batch(stmts);
+    }
   }
 
   return c.json({ url: `/api/images/serve/${key}` }, 201);

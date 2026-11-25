@@ -214,6 +214,42 @@ input::placeholder, textarea::placeholder {
   cursor: pointer;
 }
 
+/* Feed Filters */
+.feed-filters {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+.feed-filter-btn {
+  padding: 4px 12px;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 500;
+  transition: border-color var(--transition), color var(--transition), background var(--transition);
+}
+
+.feed-filter-btn:hover {
+  color: var(--text);
+  border-color: var(--text-muted);
+}
+
+.feed-filter-btn.active {
+  background: var(--bg-elevated);
+  color: var(--text);
+  border-color: var(--accent);
+}
+
+.feed-filter-tag {
+  display: inline-flex;
+  align-items: center;
+}
+
 /* Separators */
 .post-separator {
   width: 100%;

@@ -28,16 +28,17 @@ export default function ReadPost() {
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState(false);
   const [editTitle, setEditTitle] = useState('');
-  const [editSubtitle, setEditSubtitle] = useState('');
   const [editBody, setEditBody] = useState('');
-  const [editIsMarkdown, setEditIsMarkdown] = useState(false);
   const [saveError, setSaveError] = useState('');
   const [saving, setSaving] = useState(false);
   const [showDelete, setShowDelete] = useState(false);
   const [showPassphrase, setShowPassphrase] = useState(false);
+  const [showSetPassphrase, setShowSetPassphrase] = useState(false);
   const [showOrganizer, setShowOrganizer] = useState(false);
   const [decryptedBody, setDecryptedBody] = useState(null);
   const [unlockedPassphrase, setUnlockedPassphrase] = useState(null);
+  // undefined = keep current lock, null = remove lock, string = set/replace passphrase
+  const [nextPassphrase, setNextPassphrase] = useState(undefined);
   const [isOwner, setIsOwner] = useState(false);
   const [allPostIds, setAllPostIds] = useState([]);
 
@@ -49,7 +50,9 @@ export default function ReadPost() {
       setPost(null);
       setDecryptedBody(null);
       setUnlockedPassphrase(null);
+      setNextPassphrase(undefined);
       setShowPassphrase(false);
+      setShowSetPassphrase(false);
       setSaveError('');
 
       try {
@@ -58,9 +61,7 @@ export default function ReadPost() {
 
         setPost(data);
         setEditTitle(data.title);
-        setEditSubtitle(data.subtitle || '');
         setEditBody(data.body || '');
-        setEditIsMarkdown(Boolean(data.is_markdown));
         setTags(data.post_tags?.map((item) => item.tags).filter(Boolean) || []);
         const owner = data.user_id === user?.id;
         setIsOwner(owner);
@@ -128,6 +129,9 @@ export default function ReadPost() {
     }
   }
 
+  const effectiveLocked =
+    nextPassphrase !== undefined ? Boolean(nextPassphrase) : Boolean(post?.passphrase_hash);
+
   async function handleSave() {
     if (!editTitle.trim()) {
       setSaveError('Title is required.');
@@ -136,26 +140,29 @@ export default function ReadPost() {
 
     setSaving(true);
     setSaveError('');
-    const sanitized = editIsMarkdown ? editBody : sanitizeHTML(editBody);
+    const sanitized = sanitizeHTML(editBody);
 
     try {
       const payload = {
         title: editTitle.trim(),
-        subtitle: editSubtitle.trim(),
-        is_markdown: editIsMarkdown,
+        is_markdown: false,
       };
 
-      if (post.passphrase_hash) {
-        if (!unlockedPassphrase) {
-          setSaveError('Unlock the post before saving changes.');
-          setSaving(false);
-          return;
-        }
-        const locked = await lockPostBody(sanitized, unlockedPassphrase);
+      const activePassphrase =
+        nextPassphrase !== undefined
+          ? nextPassphrase
+          : post.passphrase_hash
+            ? unlockedPassphrase
+            : null;
+
+      if (activePassphrase) {
+        const locked = await lockPostBody(sanitized, activePassphrase);
         payload.passphrase_hash = locked.passphraseHash;
         payload.encrypted_body = locked.encryptedBody;
         payload.body = '';
       } else {
+        payload.passphrase_hash = null;
+        payload.encrypted_body = null;
         payload.body = sanitized;
       }
 
@@ -163,9 +170,14 @@ export default function ReadPost() {
       if (data) {
         setPost(data);
         setTags(data.post_tags?.map((item) => item.tags).filter(Boolean) || []);
-        if (post.passphrase_hash) {
+        if (activePassphrase) {
           setDecryptedBody(sanitized);
+          setUnlockedPassphrase(activePassphrase);
+        } else {
+          setDecryptedBody(null);
+          setUnlockedPassphrase(null);
         }
+        setNextPassphrase(undefined);
       }
 
       navigate(`/post/${id}`, { replace: true });
@@ -323,6 +335,21 @@ export default function ReadPost() {
           )}
           {editing && (
             <>
+              <button
+                type="button"
+                className="btn btn-outline"
+                style={{ fontSize: 13 }}
+                onClick={() => {
+                  if (effectiveLocked) {
+                    setNextPassphrase(null);
+                  } else {
+                    setShowSetPassphrase(true);
+                  }
+                }}
+                title={effectiveLocked ? 'Click to remove passphrase lock' : 'Lock post with a passphrase'}
+              >
+                {effectiveLocked ? 'Locked' : 'Lock'}
+              </button>
               <button className="btn btn-primary" style={{ fontSize: 13 }} onClick={handleSave} disabled={saving}>
                 {saving ? 'Saving...' : 'Save'}
               </button>
@@ -333,10 +360,9 @@ export default function ReadPost() {
                   navigate(`/post/${post.id}`, { replace: true });
                   setEditing(false);
                   setSaveError('');
+                  setNextPassphrase(undefined);
                   setEditTitle(post.title);
-                  setEditSubtitle(post.subtitle || '');
                   setEditBody(displayBody);
-                  setEditIsMarkdown(Boolean(post.is_markdown));
                 }}
               >
                 Cancel
@@ -370,13 +396,10 @@ export default function ReadPost() {
       {editing ? (
         <>
           <input className="read-post-title" value={editTitle} onChange={(e) => setEditTitle(e.target.value)} placeholder="Title" />
-          <input className="read-post-subtitle" value={editSubtitle} onChange={(e) => setEditSubtitle(e.target.value)} placeholder="Subtitle" />
           <div className="read-post-edit-body">
             <RichTextEditor
               content={editBody}
               onChange={setEditBody}
-              isMarkdown={editIsMarkdown}
-              onToggleMode={setEditIsMarkdown}
             />
           </div>
         </>
@@ -416,6 +439,17 @@ export default function ReadPost() {
           </div>
           <div className="read-post-body" dangerouslySetInnerHTML={{ __html: sanitizeHTML(displayBody) }} />
         </>
+      )}
+
+      {showSetPassphrase && (
+        <PassphraseDialog
+          mode="set"
+          onSubmit={(value) => {
+            setNextPassphrase(value);
+            setShowSetPassphrase(false);
+          }}
+          onCancel={() => setShowSetPassphrase(false)}
+        />
       )}
 
       {showDelete && (

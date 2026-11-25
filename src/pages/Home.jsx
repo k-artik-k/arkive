@@ -3,6 +3,7 @@ import { apiGetPinnedPosts, apiGetPosts } from '../api';
 import { useAuth } from '../contexts/AuthContext';
 import PostCard from '../components/PostCard';
 import PinnedPostsRail from '../components/PinnedPostsRail';
+import TagPill from '../components/TagPill';
 import ErrorPage from './ErrorPage';
 import { sortPostsByCreatedAt } from '../utils/postOrdering';
 import './Home.css';
@@ -15,7 +16,11 @@ export default function Home({ searchQuery = '' }) {
   const [hasMore, setHasMore] = useState(true);
   const [page, setPage] = useState(0);
   const [error, setError] = useState('');
+  const [draftsOnly, setDraftsOnly] = useState(false);
+  const [selectedTag, setSelectedTag] = useState(null);
   const loadingRef = useRef(null);
+
+  const activeTagId = selectedTag?.id || '';
 
   useEffect(() => {
     if (!user) return undefined;
@@ -32,8 +37,8 @@ export default function Home({ searchQuery = '' }) {
       try {
         const [{ posts: postData = [], hasMore: more = false }, { posts: pinnedData = [] }] =
           await Promise.all([
-            apiGetPosts({ page: 0, search: searchQuery }),
-            apiGetPinnedPosts({ search: searchQuery }),
+            apiGetPosts({ page: 0, search: searchQuery, tag: activeTagId, drafts: draftsOnly }),
+            apiGetPinnedPosts({ search: searchQuery, tag: activeTagId, drafts: draftsOnly }),
           ]);
         if (cancelled) return;
         setPosts(postData);
@@ -52,7 +57,7 @@ export default function Home({ searchQuery = '' }) {
     return () => {
       cancelled = true;
     };
-  }, [user, searchQuery]);
+  }, [user, searchQuery, activeTagId, draftsOnly]);
 
   // Infinite scroll
   useEffect(() => {
@@ -65,7 +70,7 @@ export default function Home({ searchQuery = '' }) {
           const nextPage = page + 1;
           setPage(nextPage);
           setLoading(true);
-          apiGetPosts({ page: nextPage, search: searchQuery })
+          apiGetPosts({ page: nextPage, search: searchQuery, tag: activeTagId, drafts: draftsOnly })
             .then(({ posts: data = [], hasMore: more = false }) => {
               if (cancelled) return;
               setPosts((prev) => [...prev, ...data]);
@@ -87,7 +92,7 @@ export default function Home({ searchQuery = '' }) {
       cancelled = true;
       observer.disconnect();
     };
-  }, [hasMore, loading, page, searchQuery]);
+  }, [hasMore, loading, page, searchQuery, activeTagId, draftsOnly]);
 
   function getPostTags(post) {
     return post.post_tags?.map((pt) => pt.tags).filter(Boolean) || [];
@@ -112,6 +117,10 @@ export default function Home({ searchQuery = '' }) {
     });
   }
 
+  function handleTagClick(tag) {
+    setSelectedTag((prev) => (prev?.id === tag.id ? null : tag));
+  }
+
   if (error) {
     return (
       <ErrorPage
@@ -124,12 +133,50 @@ export default function Home({ searchQuery = '' }) {
     );
   }
 
+  const filterBar = (
+    <div className="feed-filters">
+      <button
+        type="button"
+        className={`feed-filter-btn ${!draftsOnly ? 'active' : ''}`}
+        onClick={() => setDraftsOnly(false)}
+      >
+        All
+      </button>
+      <button
+        type="button"
+        className={`feed-filter-btn ${draftsOnly ? 'active' : ''}`}
+        onClick={() => setDraftsOnly(true)}
+      >
+        Drafts
+      </button>
+      {selectedTag && (
+        <div className="feed-filter-tag">
+          <TagPill
+            name={selectedTag.name}
+            pillColor={selectedTag.pill_color}
+            textColor={selectedTag.text_color}
+            onRemove={() => setSelectedTag(null)}
+          />
+        </div>
+      )}
+    </div>
+  );
+
   if (!loading && posts.length === 0 && pinnedPosts.length === 0) {
     return (
       <div className="home-page">
+        <div className="home-feed">{filterBar}</div>
         <div className="home-empty">
-          <h2>{searchQuery ? 'No posts found' : 'No posts yet'}</h2>
-          <p>{searchQuery ? `No posts matching "${searchQuery}"` : 'Click + to create your first post'}</p>
+          <h2>{searchQuery || selectedTag || draftsOnly ? 'No posts found' : 'No posts yet'}</h2>
+          <p>
+            {searchQuery
+              ? `No posts matching "${searchQuery}"`
+              : draftsOnly
+                ? 'You have no saved drafts.'
+                : selectedTag
+                  ? `No posts tagged "${selectedTag.name}".`
+                  : 'Click + to create your first post'}
+          </p>
         </div>
       </div>
     );
@@ -140,6 +187,7 @@ export default function Home({ searchQuery = '' }) {
       <PinnedPostsRail posts={pinnedPosts} createPath="/create" createLabel="New Post" />
 
       <div className="home-feed">
+        {filterBar}
         {posts.map((post, i) => (
           <div key={post.id}>
             <PostCard
@@ -147,6 +195,7 @@ export default function Home({ searchQuery = '' }) {
               tags={getPostTags(post)}
               onDeleted={handlePostDeleted}
               onUpdated={handlePostUpdated}
+              onTagClick={handleTagClick}
             />
             {i < posts.length - 1 && <hr className="post-separator" />}
           </div>

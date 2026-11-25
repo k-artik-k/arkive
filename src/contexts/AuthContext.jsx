@@ -8,8 +8,6 @@ import {
   apiUpdatePassword,
   apiUpdateProfile,
   getGoogleAuthUrl,
-  isAuthenticated,
-  setToken,
 } from '../api';
 
 const AuthContext = createContext({});
@@ -23,19 +21,11 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(true);
 
   async function loadSession() {
-    if (!isAuthenticated()) {
-      setUser(null);
-      setProfile(null);
-      setLoading(false);
-      return;
-    }
-
     try {
       const data = await apiGetProfile();
       setUser(data.user || (data.profile ? { id: data.profile.id, email: '' } : null));
       setProfile(data.profile || null);
     } catch {
-      apiLogout();
       setUser(null);
       setProfile(null);
     } finally {
@@ -96,14 +86,12 @@ export function AuthProvider({ children }) {
     window.location.assign(getGoogleAuthUrl(redirectPath));
   }
 
-  async function completeOAuthLogin(token) {
-    setToken(token);
-    setLoading(true);
-    await loadSession();
-  }
-
   async function signOut() {
-    apiLogout();
+    try {
+      await apiLogout();
+    } catch {
+      // ignore network error on sign out
+    }
     setUser(null);
     setProfile(null);
   }
@@ -135,7 +123,6 @@ export function AuthProvider({ children }) {
     signUp,
     signIn,
     signInWithGoogle,
-    completeOAuthLogin,
     signOut,
     updatePassword,
     deleteAccount,

@@ -12,7 +12,7 @@ import { duplicatePostWithTags } from '../utils/postActions';
 import { getPostShareUrl } from '../utils/appLinks';
 import './PostCard.css';
 
-export default function PostCard({ post, tags = [], onDeleted, onUpdated }) {
+export default function PostCard({ post, tags = [], onDeleted, onUpdated, onTagClick }) {
   const navigate = useNavigate();
   const { user } = useAuth();
   const [currentPost, setCurrentPost] = useState(post);
@@ -122,7 +122,20 @@ export default function PostCard({ post, tags = [], onDeleted, onUpdated }) {
         )}
         <div className="post-card-footer">
           {currentTags.map((tag) => (
-            <TagPill key={tag.id} name={tag.name} pillColor={tag.pill_color} textColor={tag.text_color} />
+            <TagPill
+              key={tag.id}
+              name={tag.name}
+              pillColor={tag.pill_color}
+              textColor={tag.text_color}
+              onClick={
+                onTagClick
+                  ? (e) => {
+                      e.stopPropagation();
+                      onTagClick(tag);
+                    }
+                  : undefined
+              }
+            />
           ))}
           {currentPost.spaces && (
             <span className="post-card-space">
