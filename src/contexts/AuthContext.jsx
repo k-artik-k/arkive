@@ -1,8 +1,20 @@
 import { createContext, useContext, useEffect, useState } from 'react';
-import { supabase } from '../supabaseClient';
+import {
+  apiDeleteAccount,
+  apiGetProfile,
+  apiLogin,
+  apiLogout,
+  apiRegister,
+  apiUpdatePassword,
+  apiUpdateProfile,
+  getGoogleAuthUrl,
+  isAuthenticated,
+  setToken,
+} from '../api';
 
 const AuthContext = createContext({});
 
+// eslint-disable-next-line react-refresh/only-export-components
 export const useAuth = () => useContext(AuthContext);
 
 export function AuthProvider({ children }) {
@@ -10,44 +22,39 @@ export function AuthProvider({ children }) {
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  async function fetchProfile(userId) {
-    const { data } = await supabase
-      .from('profiles')
-      .select('*')
-      .eq('id', userId)
-      .single();
-    setProfile(data);
-    setLoading(false);
+  async function loadSession() {
+    if (!isAuthenticated()) {
+      setUser(null);
+      setProfile(null);
+      setLoading(false);
+      return;
+    }
+
+    try {
+      const data = await apiGetProfile();
+      setUser(data.user || (data.profile ? { id: data.profile.id, email: '' } : null));
+      setProfile(data.profile || null);
+    } catch {
+      apiLogout();
+      setUser(null);
+      setProfile(null);
+    } finally {
+      setLoading(false);
+    }
   }
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setUser(session?.user ?? null);
-      if (session?.user) fetchProfile(session.user.id);
-      else setLoading(false);
-    });
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null);
-      if (session?.user) fetchProfile(session.user.id);
-      else {
-        setProfile(null);
-        setLoading(false);
-      }
-    });
-
-    return () => subscription.unsubscribe();
+    loadSession();
   }, []);
 
   async function updateProfile(updates) {
-    const { data, error } = await supabase
-      .from('profiles')
-      .update(updates)
-      .eq('id', user.id)
-      .select()
-      .single();
-    if (!error) setProfile(data);
-    return { data, error };
+    try {
+      const { profile: updated } = await apiUpdateProfile(updates);
+      setProfile(updated);
+      return { data: updated, error: null };
+    } catch (error) {
+      return { data: null, error };
+    }
   }
 
   async function updateUsername(username) {
@@ -55,43 +62,7 @@ export function AuthProvider({ children }) {
     if (!nextUsername) {
       return { data: null, error: { message: 'Username is required' } };
     }
-
-    const { data: existing, error: existingError } = await supabase
-      .from('profiles')
-      .select('id')
-      .eq('username', nextUsername)
-      .neq('id', user.id)
-      .maybeSingle();
-
-    if (existingError) {
-      return { data: null, error: existingError };
-    }
-
-    if (existing) {
-      return { data: null, error: { message: 'Username is already taken' } };
-    }
-
-    const { data, error } = await supabase
-      .from('profiles')
-      .update({
-        username: nextUsername,
-        display_name: nextUsername
-      })
-      .eq('id', user.id)
-      .select()
-      .single();
-
-    if (!error) {
-      setProfile(data);
-      const { error: metadataError } = await supabase.auth.updateUser({
-        data: { username: nextUsername, display_name: nextUsername }
-      });
-      if (metadataError) {
-        console.warn('Unable to sync auth metadata:', metadataError.message);
-      }
-    }
-
-    return { data, error };
+    return updateProfile({ username: nextUsername, display_name: nextUsername });
   }
 
   async function signUp(email, password, username) {
@@ -100,80 +71,61 @@ export function AuthProvider({ children }) {
       return { data: null, error: { message: 'Username is required' } };
     }
 
-    // Check username availability first
-    const { data: existing } = await supabase
-      .from('profiles')
-      .select('id')
-      .eq('username', nextUsername)
-      .maybeSingle();
-    
-    if (existing) {
-      return { data: null, error: { message: 'Username is already taken' } };
+    try {
+      const data = await apiRegister(email, password, nextUsername);
+      setUser(data.user);
+      setProfile(data.profile);
+      return { data, error: null };
+    } catch (error) {
+      return { data: null, error };
     }
-
-    const { data, error } = await supabase.auth.signUp({
-      email,
-      password,
-      options: {
-        data: { username: nextUsername, display_name: nextUsername }
-      }
-    });
-    return { data, error };
   }
 
   async function signIn(email, password) {
-    const { data, error } = await supabase.auth.signInWithPassword({
-      email,
-      password
-    });
-    return { data, error };
+    try {
+      const data = await apiLogin(email, password);
+      setUser(data.user);
+      setProfile(data.profile);
+      return { data, error: null };
+    } catch (error) {
+      return { data: null, error };
+    }
   }
 
-  async function signInWithGoogle(redirectPath = '/') {
-    const { data, error } = await supabase.auth.signInWithOAuth({
-      provider: 'google',
-      options: {
-        redirectTo: `${window.location.origin}/login?redirect=${encodeURIComponent(redirectPath)}`
-      }
-    });
-    return { data, error };
+  function signInWithGoogle(redirectPath = '/') {
+    window.location.assign(getGoogleAuthUrl(redirectPath));
+  }
+
+  async function completeOAuthLogin(token) {
+    setToken(token);
+    setLoading(true);
+    await loadSession();
   }
 
   async function signOut() {
-    await supabase.auth.signOut();
+    apiLogout();
     setUser(null);
     setProfile(null);
   }
 
-  async function resetPassword(email) {
-    const { data, error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: `${window.location.origin}/reset-password`
-    });
-    return { data, error };
-  }
-
   async function updatePassword(newPassword) {
-    const { data, error } = await supabase.auth.updateUser({
-      password: newPassword
-    });
-    return { data, error };
+    try {
+      const data = await apiUpdatePassword(newPassword);
+      return { data, error: null };
+    } catch (error) {
+      return { data: null, error };
+    }
   }
 
   async function deleteAccount() {
-    const { data, error } = await supabase.rpc('delete_my_account');
-
-    if (!error) {
-      try {
-        await supabase.auth.signOut();
-      } catch (signOutError) {
-        console.warn('Unable to clear session after account deletion:', signOutError);
-      }
-
+    try {
+      const data = await apiDeleteAccount();
       setUser(null);
       setProfile(null);
+      return { data, error: null };
+    } catch (error) {
+      return { data: null, error };
     }
-
-    return { data, error };
   }
 
   const value = {
@@ -183,18 +135,14 @@ export function AuthProvider({ children }) {
     signUp,
     signIn,
     signInWithGoogle,
+    completeOAuthLogin,
     signOut,
-    resetPassword,
     updatePassword,
     deleteAccount,
     updateProfile,
     updateUsername,
-    fetchProfile: () => user && fetchProfile(user.id)
+    fetchProfile: loadSession,
   };
 
-  return (
-    <AuthContext.Provider value={value}>
-      {children}
-    </AuthContext.Provider>
-  );
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

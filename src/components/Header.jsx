@@ -5,12 +5,16 @@ import Identicon from './Identicon';
 import ProfileMenu from './ProfileMenu';
 import './Header.css';
 
-export default function Header({ onSearch, showMobileMenuToggle = false, mobileMenuOpen = false, onMenuToggle }) {
+export default function Header({ onSearch, initialSearch = '', showMobileMenuToggle = false, mobileMenuOpen = false, onMenuToggle }) {
   const { user, profile } = useAuth();
   const navigate = useNavigate();
-  const [searchQuery, setSearchQuery] = useState('');
+  const [searchQuery, setSearchQuery] = useState(initialSearch);
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   const profileRef = useRef(null);
+
+  useEffect(() => {
+    setSearchQuery(initialSearch);
+  }, [initialSearch]);
 
   useEffect(() => {
     function handleClick(e) {
@@ -33,6 +37,8 @@ export default function Header({ onSearch, showMobileMenuToggle = false, mobileM
       setSearchQuery('');
       onSearch?.('');
       e.target.blur();
+    } else if (e.key === 'Enter' && !onSearch && searchQuery.trim()) {
+      navigate(`/?q=${encodeURIComponent(searchQuery.trim())}`);
     }
   }
 
@@ -50,7 +56,7 @@ export default function Header({ onSearch, showMobileMenuToggle = false, mobileM
           }
         }}
       >
-        Pvt Diary
+        arKive
       </div>
 
       <div className="header-search-wrap">

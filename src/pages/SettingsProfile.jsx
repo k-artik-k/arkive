@@ -10,6 +10,7 @@ export default function SettingsProfile() {
   const [password, setPassword] = useState('');
   const [passwordConfirm, setPasswordConfirm] = useState('');
   const [passwordState, setPasswordState] = useState({ error: '', success: '', saving: false });
+  const [dataState, setDataState] = useState({ error: '', success: '', working: false });
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleteInput, setDeleteInput] = useState('');
   const [deleteState, setDeleteState] = useState({ error: '', saving: false });
@@ -74,7 +75,13 @@ export default function SettingsProfile() {
   }
 
   async function handleExport() {
-    await exportAllData(user.id);
+    setDataState({ error: '', success: '', working: true });
+    try {
+      await exportAllData();
+      setDataState({ error: '', success: 'Export downloaded.', working: false });
+    } catch (error) {
+      setDataState({ error: error.message || 'Export failed.', success: '', working: false });
+    }
   }
 
   async function handleImport() {
@@ -85,11 +92,17 @@ export default function SettingsProfile() {
       const file = event.target.files?.[0];
       if (!file) return;
 
+      setDataState({ error: '', success: '', working: true });
       try {
-        await importData(user.id, file);
-        window.location.reload();
+        const result = await importData(file);
+        const imported = result?.imported;
+        const summary = imported
+          ? `Imported ${imported.posts} posts, ${imported.spaces} spaces, and ${imported.tags} tags.`
+          : 'Data imported successfully.';
+        setDataState({ error: '', success: summary, working: false });
+        window.dispatchEvent(new Event('arkive:sidebar-refresh'));
       } catch (error) {
-        alert(`Import failed: ${error.message}`);
+        setDataState({ error: `Import failed: ${error.message}`, success: '', working: false });
       }
     };
     input.click();
@@ -106,8 +119,8 @@ export default function SettingsProfile() {
 
     if (error) {
       setDeleteState({
-        error: error.message || 'Unable to delete account. If you uploaded files earlier, remove them first or use the admin dashboard.',
-        saving: false
+        error: error.message || 'Unable to delete account.',
+        saving: false,
       });
     }
   }
@@ -159,10 +172,12 @@ export default function SettingsProfile() {
       <section className="settings-card">
         <h2 className="settings-card-title">Data</h2>
         <div className="settings-tools">
-          <button className="btn btn-ghost" onClick={handleExport}>Export</button>
-          <button className="btn btn-ghost" onClick={handleImport}>Import</button>
+          <button className="btn btn-ghost" onClick={handleExport} disabled={dataState.working}>Export</button>
+          <button className="btn btn-ghost" onClick={handleImport} disabled={dataState.working}>Import</button>
           <button className="btn btn-danger" onClick={signOut}>Sign out</button>
         </div>
+        {dataState.error && <p className="settings-note error">{dataState.error}</p>}
+        {dataState.success && <p className="settings-note success">{dataState.success}</p>}
       </section>
 
       <section className="settings-card settings-danger-card">

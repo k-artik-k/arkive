@@ -1,6 +1,7 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { supabase } from '../supabaseClient';
+import { apiCheckSharedPost, apiResolveShareLink } from '../api';
+import ErrorPage from './ErrorPage';
 
 export default function SharedSpacePage() {
   const { shareLink } = useParams();
@@ -9,38 +10,45 @@ export default function SharedSpacePage() {
   const [status, setStatus] = useState('loading');
   const sharedPostId = searchParams.get('post');
 
-  const resolveShareLink = useCallback(async () => {
-    const { data } = await supabase
-      .from('spaces')
-      .select('id')
-      .eq('share_link', shareLink)
-      .maybeSingle();
+  useEffect(() => {
+    let cancelled = false;
 
-    if (data?.id) {
-      if (sharedPostId) {
-        const { data: postData } = await supabase
-          .from('posts')
-          .select('id')
-          .eq('id', sharedPostId)
-          .eq('space_id', data.id)
-          .maybeSingle();
+    async function resolveShareLink() {
+      setStatus('loading');
+      try {
+        const { space } = await apiResolveShareLink(shareLink);
+        if (cancelled) return;
 
-        if (postData?.id) {
-          navigate(`/post/${sharedPostId}`, { replace: true });
+        if (space?.id) {
+          if (sharedPostId) {
+            try {
+              const { exists } = await apiCheckSharedPost(shareLink, sharedPostId);
+              if (!cancelled && exists) {
+                navigate(`/post/${sharedPostId}`, { replace: true });
+                return;
+              }
+            } catch {
+              // Fall back to space page
+            }
+          }
+
+          navigate(`/space/${space.id}`, { replace: true });
           return;
         }
+      } catch {
+        // Space unavailable
       }
 
-      navigate(`/space/${data.id}`, { replace: true });
-      return;
+      if (!cancelled) {
+        setStatus('unavailable');
+      }
     }
 
-    setStatus('unavailable');
-  }, [navigate, shareLink, sharedPostId]);
-
-  useEffect(() => {
     resolveShareLink();
-  }, [resolveShareLink]);
+    return () => {
+      cancelled = true;
+    };
+  }, [navigate, shareLink, sharedPostId]);
 
   if (status === 'loading') {
     return (
@@ -51,13 +59,11 @@ export default function SharedSpacePage() {
   }
 
   return (
-    <div style={{ width: 'min(100%, 760px)', margin: '0 auto', padding: '24px' }}>
-      <div style={{ padding: '18px 0', borderTop: '1px solid var(--border)' }}>
-        <h1 style={{ fontSize: 22, lineHeight: 1.2, marginBottom: 8 }}>Unavailable</h1>
-        <p style={{ fontSize: 14, color: 'var(--text-secondary)', lineHeight: 1.6 }}>
-          Ask the owner to add your username, then try again.
-        </p>
-      </div>
-    </div>
+    <ErrorPage
+      embedded
+      code="403"
+      title="Space unavailable"
+      description="This shared link requires permission. Ask the owner to add your username, then try again."
+    />
   );
 }

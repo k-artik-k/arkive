@@ -1,12 +1,13 @@
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { supabase } from '../supabaseClient';
+import { apiCreatePost, apiGetSpaces, apiGetTags } from '../api';
 import { useAuth } from '../contexts/AuthContext';
 import RichTextEditor from '../components/RichTextEditor';
 import TagPill from '../components/TagPill';
 import PassphraseDialog from '../components/PassphraseDialog';
 import { sanitizeHTML } from '../utils/sanitize';
-import { parseDiaryDate } from '../utils/dateHelpers';
+import { formatLocalDateTag, parseDiaryDate } from '../utils/dateHelpers';
+import { lockPostBody } from '../utils/postCrypto';
 import './CreatePost.css';
 
 export default function CreatePost() {
@@ -15,6 +16,7 @@ export default function CreatePost() {
   const [searchParams] = useSearchParams();
   const initialSpaceId = searchParams.get('space') || '';
   const tagDropdownRef = useRef(null);
+  const appliedSpaceRef = useRef('');
 
   const [title, setTitle] = useState('');
   const [subtitle, setSubtitle] = useState('');
@@ -31,38 +33,44 @@ export default function CreatePost() {
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState('');
 
-  const fetchTags = useCallback(async () => {
+  useEffect(() => {
     if (!user) return;
-    const { data } = await supabase.from('tags').select('*').eq('user_id', user.id).order('name');
-    setAllTags(data || []);
+    let cancelled = false;
+
+    async function loadMeta() {
+      try {
+        const [{ tags = [] }, { owned = [] }] = await Promise.all([
+          apiGetTags(),
+          apiGetSpaces(),
+        ]);
+        if (cancelled) return;
+        setAllTags([...tags].sort((a, b) => a.name.localeCompare(b.name)));
+        setAllSpaces(owned);
+      } catch {
+        // ignore metadata load error
+      }
+    }
+
+    loadMeta();
+    return () => {
+      cancelled = true;
+    };
   }, [user]);
 
-  const fetchSpaces = useCallback(async () => {
-    if (!user) return;
-    const { data } = await supabase.from('spaces').select('id, name, icon, tag_id').eq('user_id', user.id).order('created_at');
-    setAllSpaces(data || []);
-  }, [user]);
-
-  const applySpaceTag = useCallback(async () => {
-    if (!selectedSpaceId || allTags.length === 0) return;
+  // Apply space's linked tag once when the selected space changes
+  useEffect(() => {
+    if (!selectedSpaceId || allTags.length === 0 || allSpaces.length === 0) return;
+    if (appliedSpaceRef.current === selectedSpaceId) return;
 
     const linkedTagId = allSpaces.find((space) => space.id === selectedSpaceId)?.tag_id;
+    appliedSpaceRef.current = selectedSpaceId;
     if (!linkedTagId) return;
 
     const tag = allTags.find((item) => item.id === linkedTagId);
-    if (tag && !selectedTags.find((item) => item.id === tag.id)) {
-      setSelectedTags((prev) => [...prev, tag]);
+    if (tag) {
+      setSelectedTags((prev) => (prev.some((item) => item.id === tag.id) ? prev : [...prev, tag]));
     }
-  }, [allSpaces, allTags, selectedSpaceId, selectedTags]);
-
-  useEffect(() => {
-    fetchTags();
-    fetchSpaces();
-  }, [fetchTags, fetchSpaces]);
-
-  useEffect(() => {
-    applySpaceTag();
-  }, [applySpaceTag]);
+  }, [allSpaces, allTags, selectedSpaceId]);
 
   useEffect(() => {
     if (!selectedSpaceId || allSpaces.length === 0) return;
@@ -111,58 +119,39 @@ export default function CreatePost() {
     let passphraseHash = null;
     let encryptedBody = null;
 
-    if (passphrase) {
-      const encoder = new TextEncoder();
-      const data = encoder.encode(passphrase);
-      const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-      const hashArray = Array.from(new Uint8Array(hashBuffer));
-      passphraseHash = hashArray.map((byte) => byte.toString(16).padStart(2, '0')).join('');
-
-      const key = await crypto.subtle.importKey('raw', hashBuffer, 'AES-GCM', false, ['encrypt']);
-      const iv = crypto.getRandomValues(new Uint8Array(12));
-      const encrypted = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, encoder.encode(sanitizedBody));
-      const combined = new Uint8Array(iv.length + new Uint8Array(encrypted).length);
-      combined.set(iv);
-      combined.set(new Uint8Array(encrypted), iv.length);
-      encryptedBody = btoa(String.fromCharCode(...combined));
-    }
-
-    const { data: post, error } = await supabase.from('posts').insert({
-      user_id: user.id,
-      title: title.trim(),
-      subtitle: subtitle.trim(),
-      body: passphraseHash ? '' : sanitizedBody,
-      is_markdown: isMarkdown,
-      is_draft: isDraft,
-      passphrase_hash: passphraseHash,
-      encrypted_body: encryptedBody,
-      date_tag: dateTag || (diaryDate ? diaryDate.toISOString().split('T')[0] : null),
-      space_id: selectedSpaceId || null
-    }).select().single();
-
-    if (error || !post) {
-      setSaving(false);
-      setSaveError(error?.message || 'Could not save this post.');
-      return;
-    }
-
-    if (selectedTags.length > 0) {
-      const tagInserts = selectedTags.map((tag) => ({ post_id: post.id, tag_id: tag.id }));
-      const { error: tagError } = await supabase.from('post_tags').insert(tagInserts);
-      if (tagError) {
-        setSaveError('Post saved, but tags could not be attached.');
+    try {
+      if (passphrase) {
+        const locked = await lockPostBody(sanitizedBody, passphrase);
+        passphraseHash = locked.passphraseHash;
+        encryptedBody = locked.encryptedBody;
       }
-    }
 
-    setSaving(false);
-    navigate(selectedSpaceId ? `/space/${selectedSpaceId}` : '/');
+      await apiCreatePost({
+        title: title.trim(),
+        subtitle: subtitle.trim(),
+        body: passphraseHash ? '' : sanitizedBody,
+        is_markdown: isMarkdown,
+        is_draft: isDraft,
+        passphrase_hash: passphraseHash,
+        encrypted_body: encryptedBody,
+        date_tag: dateTag || formatLocalDateTag(diaryDate),
+        space_id: selectedSpaceId || null,
+        tag_ids: selectedTags.map((tag) => tag.id),
+      });
+
+      navigate(selectedSpaceId ? `/space/${selectedSpaceId}` : '/');
+    } catch (error) {
+      setSaveError(error?.message || 'Could not save this post.');
+    } finally {
+      setSaving(false);
+    }
   }
 
   return (
     <div className="create-post-page">
       <div className="create-post-header">
         <button className="create-post-back" onClick={() => navigate(-1)}>
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M19 12H5M12 19l-7-7 7-7" /></svg>
         </button>
         <div>
           <h1 className="create-post-heading">New Post</h1>
@@ -177,7 +166,10 @@ export default function CreatePost() {
               id="post-space"
               className="create-post-space-select"
               value={selectedSpaceId}
-              onChange={(e) => setSelectedSpaceId(e.target.value)}
+              onChange={(e) => {
+                appliedSpaceRef.current = '';
+                setSelectedSpaceId(e.target.value);
+              }}
             >
               <option value="">Private only</option>
               {allSpaces.map((space) => (
@@ -290,6 +282,7 @@ export default function CreatePost() {
 
         <div className="create-post-actions">
           <button
+            type="button"
             className="btn btn-outline"
             onClick={() => {
               if (passphrase) {
@@ -300,15 +293,15 @@ export default function CreatePost() {
             }}
           >
             {passphrase ? (
-              <><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg> Locked</>
+              <><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="11" width="18" height="11" rx="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></svg> Locked</>
             ) : (
-              <><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 5-5 5 5 0 0 1 5 5"/></svg> Lock</>
+              <><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="11" width="18" height="11" rx="2" /><path d="M7 11V7a5 5 0 0 1 5-5 5 5 0 0 1 5 5" /></svg> Lock</>
             )}
           </button>
-          <button className="btn btn-ghost" onClick={() => handleSave(true)} disabled={saving}>
+          <button type="button" className="btn btn-ghost" onClick={() => handleSave(true)} disabled={saving}>
             Draft
           </button>
-          <button className="btn btn-primary" onClick={() => handleSave(false)} disabled={saving}>
+          <button type="button" className="btn btn-primary" onClick={() => handleSave(false)} disabled={saving}>
             {saving ? 'Posting...' : 'Post'}
           </button>
         </div>

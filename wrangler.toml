@@ -1,0 +1,18 @@
+name = "arkive"
+compatibility_date = "2024-11-01"
+pages_build_output_dir = "dist"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "arkive-db"
+database_id = "77a5626e-c35b-4759-964c-4602c96cb43d"
+
+# Optional: Uncomment after enabling R2 in Cloudflare Dashboard for large (>750KB) image uploads.
+# Without R2, images up to 750KB automatically store in D1 (no credit card required).
+# [[r2_buckets]]
+# binding = "IMAGES"
+# bucket_name = "arkive-images"
+
+# IMPORTANT: Never commit JWT_SECRET here.
+# Local dev: copy .dev.vars.example to .dev.vars
+# Production: run `npx wrangler pages secret put JWT_SECRET` (or add in Cloudflare Pages Settings -> Environment variables)

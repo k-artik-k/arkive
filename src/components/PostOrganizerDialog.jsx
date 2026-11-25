@@ -1,8 +1,7 @@
 import { useEffect, useState } from 'react';
-import { supabase } from '../supabaseClient';
+import { apiCreateTag, apiGetSpaces, apiGetTags, apiUpdatePost } from '../api';
 import { useAuth } from '../contexts/AuthContext';
 import TagPill from './TagPill';
-import { syncPostTags } from '../utils/postActions';
 import './PostOrganizerDialog.css';
 
 const DEFAULT_TAG_COLOR = '#3b82f6';
@@ -28,13 +27,16 @@ export default function PostOrganizerDialog({ post, tags = [], onClose, onSaved 
     if (!user) return;
 
     async function fetchOptions() {
-      const [{ data: spaceData }, { data: tagData }] = await Promise.all([
-        supabase.from('spaces').select('id, name, icon').eq('user_id', user.id).order('name'),
-        supabase.from('tags').select('*').eq('user_id', user.id).order('name')
-      ]);
-
-      setSpaces(spaceData || []);
-      setAllTags(tagData || []);
+      try {
+        const [{ owned: spaceData = [] }, { tags: tagData = [] }] = await Promise.all([
+          apiGetSpaces(),
+          apiGetTags(),
+        ]);
+        setSpaces(spaceData);
+        setAllTags([...tagData].sort((a, b) => a.name.localeCompare(b.name)));
+      } catch {
+        setError('Unable to load spaces or tags.');
+      }
     }
 
     fetchOptions();
@@ -66,59 +68,40 @@ export default function PostOrganizerDialog({ post, tags = [], onClose, onSaved 
     setCreatingTag(true);
     setError('');
 
-    const { data, error: createError } = await supabase
-      .from('tags')
-      .insert({
-        user_id: user.id,
+    try {
+      const { tag: data } = await apiCreateTag({
         name,
         pill_color: DEFAULT_TAG_COLOR,
-        text_color: DEFAULT_TEXT_COLOR
-      })
-      .select()
-      .single();
-
-    setCreatingTag(false);
-
-    if (createError || !data) {
+        text_color: DEFAULT_TEXT_COLOR,
+      });
+      setAllTags((prev) => [...prev, data].sort((a, b) => a.name.localeCompare(b.name)));
+      setSelectedTagIds((prev) => (prev.includes(data.id) ? prev : [...prev, data.id]));
+      setNewTagName('');
+    } catch (createError) {
       setError(createError?.message || 'Could not create that tag.');
-      return;
+    } finally {
+      setCreatingTag(false);
     }
-
-    setAllTags((prev) => [...prev, data].sort((a, b) => a.name.localeCompare(b.name)));
-    setSelectedTagIds((prev) => (prev.includes(data.id) ? prev : [...prev, data.id]));
-    setNewTagName('');
   }
 
   async function handleSave() {
     setSaving(true);
     setError('');
 
-    const { data: updatedPost, error: postError } = await supabase
-      .from('posts')
-      .update({ space_id: selectedSpaceId || null })
-      .eq('id', post.id)
-      .select('*, spaces(id, name, icon, share_link)')
-      .single();
+    try {
+      const { post: updatedPost } = await apiUpdatePost(post.id, {
+        space_id: selectedSpaceId || null,
+        tag_ids: selectedTagIds,
+      });
 
-    if (postError || !updatedPost) {
+      const nextTags = allTags.filter((tag) => selectedTagIds.includes(tag.id));
+      onSaved?.(updatedPost, nextTags);
+      onClose?.();
+    } catch (err) {
+      setError(err?.message || 'Could not update this post.');
+    } finally {
       setSaving(false);
-      setError(postError?.message || 'Could not update this post.');
-      return;
     }
-
-    const previousTagIds = tags.map((tag) => tag.id);
-    const { error: tagError } = await syncPostTags(post.id, previousTagIds, selectedTagIds);
-
-    if (tagError) {
-      setSaving(false);
-      setError(tagError.message || 'Could not update the tags for this post.');
-      return;
-    }
-
-    const nextTags = allTags.filter((tag) => selectedTagIds.includes(tag.id));
-    onSaved?.(updatedPost, nextTags);
-    setSaving(false);
-    onClose?.();
   }
 
   return (
@@ -212,8 +195,8 @@ export default function PostOrganizerDialog({ post, tags = [], onClose, onSaved 
         </div>
 
         <div className="post-organizer-footer">
-          <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
-          <button className="btn btn-primary" onClick={handleSave} disabled={saving}>
+          <button type="button" className="btn btn-ghost" onClick={onClose}>Cancel</button>
+          <button type="button" className="btn btn-primary" onClick={handleSave} disabled={saving}>
             {saving ? 'Saving...' : 'Save Changes'}
           </button>
         </div>

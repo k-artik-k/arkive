@@ -1,75 +1,91 @@
-# Pvt Diary
+# arKive
 
-A private writing system for journaling, long-form notes, and controlled sharing.
+A private, encrypted archive and writing space — running 100% on the **Cloudflare Free Tier** (Cloudflare Pages + Pages Functions + D1).
 
-![login](screenshots/login.png)  
-  
-![home](screenshots/home.png)  
-  
-![people](screenshots/people.png)  
-  
-![pro update](screenshots/profile_update.png)  
+## Features
 
-![profile menu](screenshots/profile_menu.png)
+- Rich text (TipTap) and Markdown writing modes with drafts and pinning
+- Spaces for organizing entries and selective sharing by username + invite link
+- Client-side passphrase locking (PBKDF2 + AES-GCM) for sensitive posts
+- Color-coded tags and yearly calendar view
+- Image uploads (stored in Cloudflare D1 automatically, or R2 if enabled)
+- Full JSON export and import
+- Keyboard shortcuts (`Ctrl+K` to create, `/` to search, `g h` home, `g c` calendar)
 
-Replace messy notes, scattered thoughts, and over-social writing apps with a space that actually feels personal.
+---
 
-Pvt Diary is built around one idea. Writing should stay clean, structured, and private unless you choose otherwise.
+## Deploy to Cloudflare (Free Tier, No Credit Card Needed)
 
+### 1. Install dependencies & log in to Cloudflare
+```bash
+npm install
+npx wrangler login
+```
 
+### 2. Create your free Cloudflare D1 database
+```bash
+npx wrangler d1 create arkive-db
+```
+Copy the `database_id` printed in the terminal and paste it into `wrangler.toml`:
+```toml
+database_id = "YOUR_COPIED_DATABASE_ID"
+```
 
-## Overview
+### 3. Apply the database schema
+```bash
+npm run db:migrate:remote
+```
 
-Pvt Diary combines personal journaling with structured organization and selective sharing.
+### 4. Set your JWT secret & deploy
+```bash
+npm run deploy
+npx wrangler pages secret put JWT_SECRET
+npm run deploy
+```
+> Cloudflare Pages applies secrets only to **new deployments**, so always run `npm run deploy` again after adding or updating `JWT_SECRET`. When prompted, paste any long random string (e.g. 32+ random characters). Do **not** commit this secret to git.
 
-Every post is treated as a first-class piece of content. Spaces, tags, and people are built around it, not the other way around. The goal is to keep the experience minimal while still handling real use cases like grouping, sharing, and revisiting content over time.
+After deploying, open your `*.pages.dev` URL!
 
+### 5. (Optional) Enable Google Sign-In
+In Google Cloud Console → **APIs & Services → Credentials → Create OAuth client ID** (Web application):
+- **Authorized redirect URI:** `https://YOUR-SITE.pages.dev/api/auth/google/callback`
 
+Then add your Google secrets server-side (never in client code or git) and redeploy:
+```bash
+npx wrangler pages secret put GOOGLE_CLIENT_ID
+npx wrangler pages secret put GOOGLE_CLIENT_SECRET
+npm run deploy
+```
 
-## What you can do
+---
 
-Write freely using rich text or markdown and keep posts as drafts until they’re ready. Organize everything into spaces that act like private collections. Share those spaces with specific people instead of making content public.
+## Migrating Existing Data from Supabase
 
-Protect sensitive posts with a passphrase when needed. Pin important posts without disturbing the normal flow, using a separate shortcut rail. Use tags to structure content further, and navigate people based on actual shared spaces instead of a forced social system.
+1. In Supabase Dashboard, go to **Project Settings → API** and copy your **Project URL** and **`service_role` (secret)** key.
+2. Export every table, user, and uploaded image locally:
+   ```powershell
+   $env:SUPABASE_URL="https://your-project.supabase.co"
+   $env:SUPABASE_SERVICE_KEY="your-service-role-key"
+   node scripts/export-supabase.mjs
+   ```
+3. Generate the Cloudflare D1 import SQL (choose a temporary password so you can sign in right away):
+   ```powershell
+   $env:MIGRATION_PASSWORD="TempPassword123"
+   node scripts/import-to-d1.mjs
+   ```
+4. Apply the data to your D1 database:
+   ```bash
+   npx wrangler d1 execute arkive-db --remote --file=migration-import.sql
+   ```
+5. Sign in with your email + `TempPassword123`, then update your password under **Profile** settings.
 
-This works as a personal diary, a long-form thinking space, or even a lightweight shared environment for small groups.
+---
 
+## Local Development
 
-
-## Core Experience
-
-The app is designed to stay out of your way.
-
-The main feed remains stable and readable. Pinned content does not interfere with it. Navigation is fast, minimal, and keyboard-friendly. There is no activity tracking, no “who viewed your post”, and no hidden social pressure.
-
-Everything revolves around ownership and controlled visibility.
-
-
-
-## Tech
-
-Built with React (Vite) on the frontend and Supabase on the backend.
-
-Supabase handles authentication, database, storage, and access control. Row Level Security is used to enforce who can see and modify data, so privacy is part of the system itself, not just the UI.
-
-
-
-## Live
-
-[Open the app](https://pvt-diary-app.vercel.app)
-
-
-
-## Why this exists
-
-Most writing apps either become cluttered or push everything toward being public.
-
-This project was an attempt to build something that stays minimal even as content grows, while still solving real problems like organization and sharing.
-
-It’s also my first full-stack project where I worked on both the frontend experience and the backend design together.
-
-
-
-## Author
-
-Kartikeya...
+```bash
+cp .dev.vars.example .dev.vars
+npm run db:migrate:local
+npm run build
+npm run dev:cf
+```

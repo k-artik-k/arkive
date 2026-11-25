@@ -1,6 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { supabase } from '../supabaseClient';
+import { apiCreateSpace, apiDeleteSpace, apiGetSpaces, apiGetTags, apiUpdateSpace } from '../api';
 import { useAuth } from '../contexts/AuthContext';
 import { getSharedSpaceUrl } from '../utils/appLinks';
 import SettingsItemMenu from './SettingsItemMenu';
@@ -20,31 +20,30 @@ export default function SpaceManager() {
   const [editingId, setEditingId] = useState(null);
   const [feedback, setFeedback] = useState({ type: '', text: '' });
 
+  const fetchSpaces = useCallback(async () => {
+    try {
+      const { owned = [] } = await apiGetSpaces();
+      setSpaces(owned);
+    } catch {
+      setSpaces([]);
+    }
+  }, []);
+
+  const fetchTags = useCallback(async () => {
+    try {
+      const { tags: data = [] } = await apiGetTags();
+      setTags([...data].sort((a, b) => a.name.localeCompare(b.name)));
+    } catch {
+      setTags([]);
+    }
+  }, []);
+
   useEffect(() => {
     if (!user) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchSpaces();
     fetchTags();
-  }, [user]);
-
-  async function fetchSpaces() {
-    const { data } = await supabase
-      .from('spaces')
-      .select('id, name, icon, tag_id, show_in_menu, share_link, tags(name)')
-      .eq('user_id', user.id)
-      .order('created_at');
-
-    setSpaces(data || []);
-  }
-
-  async function fetchTags() {
-    const { data } = await supabase
-      .from('tags')
-      .select('*')
-      .eq('user_id', user.id)
-      .order('name');
-
-    setTags(data || []);
-  }
+  }, [user, fetchSpaces, fetchTags]);
 
   function resetForm() {
     setName('');
@@ -63,39 +62,36 @@ export default function SpaceManager() {
     }
 
     const payload = {
-      user_id: user.id,
       name: nextName,
       icon: icon || DEFAULT_SPACE_ICON,
       tag_id: tagId || null,
-      show_in_menu: showInMenu
+      show_in_menu: showInMenu,
     };
 
-    const query = editingId
-      ? supabase.from('spaces').update(payload).eq('id', editingId)
-      : supabase.from('spaces').insert(payload);
-
-    const { error } = await query;
-
-    if (error) {
+    try {
+      if (editingId) {
+        await apiUpdateSpace(editingId, payload);
+      } else {
+        await apiCreateSpace(payload);
+      }
+      setFeedback({ type: 'success', text: editingId ? 'Space updated.' : 'Space created.' });
+      resetForm();
+      await fetchSpaces();
+      window.dispatchEvent(new Event('arkive:sidebar-refresh'));
+    } catch (error) {
       setFeedback({ type: 'error', text: error.message || 'Could not save space.' });
-      return;
     }
-
-    setFeedback({ type: 'success', text: editingId ? 'Space updated.' : 'Space created.' });
-    resetForm();
-    fetchSpaces();
   }
 
   async function handleDelete(id) {
-    const { error } = await supabase.from('spaces').delete().eq('id', id);
-
-    if (error) {
+    try {
+      await apiDeleteSpace(id);
+      setFeedback({ type: 'success', text: 'Space deleted.' });
+      await fetchSpaces();
+      window.dispatchEvent(new Event('arkive:sidebar-refresh'));
+    } catch (error) {
       setFeedback({ type: 'error', text: error.message || 'Could not delete space.' });
-      return;
     }
-
-    setFeedback({ type: 'success', text: 'Space deleted.' });
-    fetchSpaces();
   }
 
   function startEdit(space) {
@@ -213,7 +209,7 @@ export default function SpaceManager() {
                   { label: 'Open', onSelect: () => navigate(`/space/${space.id}`) },
                   { label: 'Copy link', onSelect: () => copyShareLink(space) },
                   { label: 'Edit', onSelect: () => startEdit(space) },
-                  { label: 'Delete', danger: true, onSelect: () => handleDelete(space.id) }
+                  { label: 'Delete', danger: true, onSelect: () => handleDelete(space.id) },
                 ]}
               />
             </div>

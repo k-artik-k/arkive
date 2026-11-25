@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { supabase } from '../supabaseClient';
+import { apiDeletePost, apiUpdatePost } from '../api';
 import { useAuth } from '../contexts/AuthContext';
 import TagPill from './TagPill';
 import ConfirmDialog from './ConfirmDialog';
@@ -36,34 +36,34 @@ export default function PostCard({ post, tags = [], onDeleted, onUpdated }) {
   }
 
   async function handleDelete() {
-    await supabase.from('posts').delete().eq('id', currentPost.id);
-    setShowDelete(false);
-    onDeleted?.(currentPost.id);
+    try {
+      await apiDeletePost(currentPost.id);
+      setShowDelete(false);
+      onDeleted?.(currentPost.id);
+    } catch {
+      setShowDelete(false);
+    }
   }
 
   async function handleToggleDraft() {
-    const { data } = await supabase
-      .from('posts')
-      .update({ is_draft: !currentPost.is_draft })
-      .eq('id', currentPost.id)
-      .select('*, spaces(id, name, icon, share_link)')
-      .single();
-
-    if (data) {
-      handlePostUpdated(data, currentTags);
+    try {
+      const { post: data } = await apiUpdatePost(currentPost.id, { is_draft: !currentPost.is_draft });
+      if (data) {
+        handlePostUpdated(data, currentTags);
+      }
+    } catch {
+      // ignore failed toggle
     }
   }
 
   async function handleTogglePin() {
-    const { data } = await supabase
-      .from('posts')
-      .update({ is_pinned: !currentPost.is_pinned })
-      .eq('id', currentPost.id)
-      .select('*, spaces(id, name, icon, share_link)')
-      .single();
-
-    if (data) {
-      handlePostUpdated(data, currentTags);
+    try {
+      const { post: data } = await apiUpdatePost(currentPost.id, { is_pinned: !currentPost.is_pinned });
+      if (data) {
+        handlePostUpdated(data, currentTags);
+      }
+    } catch {
+      // ignore failed toggle
     }
   }
 
@@ -93,8 +93,8 @@ export default function PostCard({ post, tags = [], onDeleted, onUpdated }) {
             {currentPost.passphrase_hash && (
               <span className="post-card-lock" title="Locked">
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
-                  <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+                  <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+                  <path d="M7 11V7a5 5 0 0 1 10 0v4" />
                 </svg>
               </span>
             )}

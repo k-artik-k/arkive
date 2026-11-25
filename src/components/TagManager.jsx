@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
-import { supabase } from '../supabaseClient';
+import { useState, useEffect, useCallback } from 'react';
+import { apiCreateTag, apiDeleteTag, apiGetTags, apiUpdateTag } from '../api';
 import { useAuth } from '../contexts/AuthContext';
 import TagPill from './TagPill';
 import SettingsItemMenu from './SettingsItemMenu';
@@ -8,7 +8,7 @@ import './SettingsManager.css';
 const DEFAULT_COLORS = [
   '#3b82f6', '#ef4444', '#22c55e', '#f59e0b', '#8b5cf6',
   '#ec4899', '#06b6d4', '#f97316', '#6366f1', '#14b8a6',
-  '#e11d48', '#84cc16', '#0ea5e9', '#a855f7', '#64748b'
+  '#e11d48', '#84cc16', '#0ea5e9', '#a855f7', '#64748b',
 ];
 
 export default function TagManager() {
@@ -21,19 +21,21 @@ export default function TagManager() {
   const [editingId, setEditingId] = useState(null);
   const [feedback, setFeedback] = useState({ type: '', text: '' });
 
+  const fetchTags = useCallback(async () => {
+    try {
+      const { tags: data = [] } = await apiGetTags();
+      setTags(data);
+    } catch {
+      setTags([]);
+    }
+  }, []);
+
   useEffect(() => {
-    if (user) fetchTags();
-  }, [user]);
-
-  async function fetchTags() {
-    const { data } = await supabase
-      .from('tags')
-      .select('*')
-      .eq('user_id', user.id)
-      .order('created_at');
-
-    setTags(data || []);
-  }
+    if (user) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      fetchTags();
+    }
+  }, [user, fetchTags]);
 
   function resetForm() {
     setName('');
@@ -51,37 +53,28 @@ export default function TagManager() {
       return;
     }
 
-    const query = editingId
-      ? supabase
-          .from('tags')
-          .update({ name: nextName, pill_color: pillColor, text_color: textColor })
-          .eq('id', editingId)
-      : supabase
-          .from('tags')
-          .insert({ user_id: user.id, name: nextName, pill_color: pillColor, text_color: textColor });
-
-    const { error } = await query;
-
-    if (error) {
+    try {
+      if (editingId) {
+        await apiUpdateTag(editingId, { name: nextName, pill_color: pillColor, text_color: textColor });
+      } else {
+        await apiCreateTag({ name: nextName, pill_color: pillColor, text_color: textColor });
+      }
+      setFeedback({ type: 'success', text: editingId ? 'Tag updated.' : 'Tag created.' });
+      resetForm();
+      await fetchTags();
+    } catch (error) {
       setFeedback({ type: 'error', text: error.message || 'Could not save tag.' });
-      return;
     }
-
-    setFeedback({ type: 'success', text: editingId ? 'Tag updated.' : 'Tag created.' });
-    resetForm();
-    fetchTags();
   }
 
   async function handleDelete(id) {
-    const { error } = await supabase.from('tags').delete().eq('id', id);
-
-    if (error) {
+    try {
+      await apiDeleteTag(id);
+      setFeedback({ type: 'success', text: 'Tag deleted.' });
+      await fetchTags();
+    } catch (error) {
       setFeedback({ type: 'error', text: error.message || 'Could not delete tag.' });
-      return;
     }
-
-    setFeedback({ type: 'success', text: 'Tag deleted.' });
-    fetchTags();
   }
 
   function startEdit(tag) {
@@ -184,7 +177,7 @@ export default function TagManager() {
               <SettingsItemMenu
                 items={[
                   { label: 'Edit', onSelect: () => startEdit(tag) },
-                  { label: 'Delete', danger: true, onSelect: () => handleDelete(tag.id) }
+                  { label: 'Delete', danger: true, onSelect: () => handleDelete(tag.id) },
                 ]}
               />
             </div>

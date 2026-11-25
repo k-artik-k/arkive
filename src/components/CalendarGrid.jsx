@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { getDaysInMonth, getFirstDayOfMonth, MONTH_ABBR } from '../utils/dateHelpers';
+import { getDaysInMonth, getFirstDayOfMonth, MONTH_ABBR, parseDateTag } from '../utils/dateHelpers';
 import './CalendarGrid.css';
 
 const WEEKDAYS = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];
@@ -9,13 +9,12 @@ export default function CalendarGrid({ year, posts = [] }) {
   const navigate = useNavigate();
   const [hoveredDay, setHoveredDay] = useState(null);
 
-  // Build a map of date -> post info for quick lookup
   const postMap = useMemo(() => {
     const map = {};
-    posts.forEach(post => {
-      if (post.date_tag) {
-        const d = new Date(post.date_tag);
-        const key = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+    posts.forEach((post) => {
+      const parsed = parseDateTag(post.date_tag);
+      if (parsed) {
+        const key = `${parsed.year}-${parsed.month}-${parsed.day}`;
         map[key] = { subtitle: post.subtitle || post.title, id: post.id };
       }
     });
@@ -34,14 +33,12 @@ export default function CalendarGrid({ year, posts = [] }) {
           <div key={month} className="calendar-month">
             <div className="calendar-month-title">{MONTH_ABBR[month]}</div>
             <div className="calendar-weekdays">
-              {WEEKDAYS.map(d => <span key={d}>{d}</span>)}
+              {WEEKDAYS.map((d) => <span key={d}>{d}</span>)}
             </div>
             <div className="calendar-days">
-              {/* Empty cells before first day */}
               {Array.from({ length: firstDay }, (_, i) => (
                 <span key={`e-${i}`} className="calendar-day" />
               ))}
-              {/* Day cells */}
               {Array.from({ length: days }, (_, i) => {
                 const day = i + 1;
                 const key = `${year}-${month}-${day}`;

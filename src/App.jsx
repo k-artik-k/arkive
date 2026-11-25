@@ -1,10 +1,11 @@
-import { useState } from 'react';
-import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
+import { useState, useEffect } from 'react';
+import { BrowserRouter as Router, Routes, Route, Navigate, useLocation, useSearchParams } from 'react-router-dom';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
+import ErrorBoundary from './components/ErrorBoundary';
 import Layout from './components/Layout';
+import ErrorPage from './pages/ErrorPage';
 import Login from './pages/Login';
 import Register from './pages/Register';
-import ResetPassword from './pages/ResetPassword';
 import Home from './pages/Home';
 import Calendar from './pages/Calendar';
 import CreatePost from './pages/CreatePost';
@@ -20,7 +21,13 @@ import PersonProfile from './pages/PersonProfile';
 function ProtectedRoute({ children }) {
   const { user, loading } = useAuth();
   const location = useLocation();
-  if (loading) return <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', color: '#666' }}>Loading...</div>;
+  if (loading) {
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', color: '#666' }}>
+        Loading...
+      </div>
+    );
+  }
   if (!user) {
     const redirect = `${location.pathname}${location.search}`;
     return <Navigate to={`/login?redirect=${encodeURIComponent(redirect)}`} replace />;
@@ -31,27 +38,45 @@ function ProtectedRoute({ children }) {
 function PublicRoute({ children }) {
   const { user, loading } = useAuth();
   const location = useLocation();
-  const redirect = new URLSearchParams(location.search).get('redirect') || '/';
+  const rawRedirect = new URLSearchParams(location.search).get('redirect') || '/';
+  const redirect = rawRedirect.startsWith('/') && !rawRedirect.startsWith('//') ? rawRedirect : '/';
   if (loading) return null;
   if (user) return <Navigate to={redirect} replace />;
   return children;
 }
 
-function AppRoutes() {
-  const [searchQuery, setSearchQuery] = useState('');
+function HomeRoute() {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const urlQuery = searchParams.get('q') || '';
+  const [searchQuery, setSearchQuery] = useState(urlQuery);
 
+  useEffect(() => {
+    setSearchQuery(urlQuery);
+  }, [urlQuery]);
+
+  function handleSearchChange(value) {
+    setSearchQuery(value);
+    if (urlQuery && !value) {
+      setSearchParams({}, { replace: true });
+    }
+  }
+
+  return (
+    <Layout onSearch={handleSearchChange} initialSearch={searchQuery}>
+      <Home searchQuery={searchQuery} />
+    </Layout>
+  );
+}
+
+function AppRoutes() {
   return (
     <Routes>
       <Route path="/login" element={<PublicRoute><Login /></PublicRoute>} />
       <Route path="/register" element={<PublicRoute><Register /></PublicRoute>} />
-      <Route path="/forgot-password" element={<ResetPassword />} />
-      <Route path="/reset-password" element={<ResetPassword />} />
 
       <Route path="/" element={
         <ProtectedRoute>
-          <Layout onSearch={setSearchQuery}>
-            <Home searchQuery={searchQuery} />
-          </Layout>
+          <HomeRoute />
         </ProtectedRoute>
       } />
       <Route path="/calendar" element={
@@ -124,16 +149,19 @@ function AppRoutes() {
           </Layout>
         </ProtectedRoute>
       } />
+      <Route path="*" element={<ErrorPage code="404" />} />
     </Routes>
   );
 }
 
 export default function App() {
   return (
-    <Router>
-      <AuthProvider>
-        <AppRoutes />
-      </AuthProvider>
-    </Router>
+    <ErrorBoundary>
+      <Router>
+        <AuthProvider>
+          <AppRoutes />
+        </AuthProvider>
+      </Router>
+    </ErrorBoundary>
   );
 }

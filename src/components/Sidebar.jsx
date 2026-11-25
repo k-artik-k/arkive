@@ -1,9 +1,8 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { supabase } from '../supabaseClient';
+import { apiCreateSpace, apiGetPeople, apiGetSpaces } from '../api';
 import { useAuth } from '../contexts/AuthContext';
 import Identicon from './Identicon';
-import { fetchOwnedSpacePeople } from '../utils/peopleDirectory';
 import './Sidebar.css';
 
 const DEFAULT_SPACE_ICON = '📁';
@@ -13,7 +12,7 @@ export default function Sidebar({
   onToggle,
   isMobile = false,
   mobileOpen = false,
-  onMobileClose
+  onMobileClose,
 }) {
   const navigate = useNavigate();
   const location = useLocation();
@@ -25,51 +24,32 @@ export default function Sidebar({
   const [newSpaceName, setNewSpaceName] = useState('');
   const [newSpaceIcon, setNewSpaceIcon] = useState(DEFAULT_SPACE_ICON);
 
-  async function queryAccessibleSpaces() {
-    const { data } = await supabase
-      .from('spaces')
-      .select('id, name, icon, user_id, show_in_menu')
-      .eq('show_in_menu', true)
-      .order('created_at');
-
-    return data || [];
-  }
-
-  useEffect(() => {
-    let cancelled = false;
-
-    async function loadSpaces() {
-      if (!user?.id) return;
-      const spaces = await queryAccessibleSpaces();
-      if (cancelled) return;
-      setOwnedSpaces(spaces.filter((space) => space.user_id === user.id));
-      setSharedSpaces(spaces.filter((space) => space.user_id !== user.id));
+  const loadSidebarData = useCallback(async () => {
+    if (!user?.id) return;
+    try {
+      const [{ owned = [], shared = [] }, { people: peopleData = [] }] = await Promise.all([
+        apiGetSpaces(),
+        apiGetPeople(),
+      ]);
+      setOwnedSpaces(owned.filter((space) => space.show_in_menu));
+      setSharedSpaces(shared.filter((space) => space.show_in_menu));
+      setPeople(peopleData);
+    } catch {
+      // Non-fatal sidebar load error
     }
-
-    loadSpaces();
-
-    return () => {
-      cancelled = true;
-    };
   }, [user?.id]);
 
   useEffect(() => {
-    let cancelled = false;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    loadSidebarData();
 
-    async function loadPeople() {
-      if (!user?.id) return;
-      const peopleData = await fetchOwnedSpacePeople(user.id);
-      if (!cancelled) {
-        setPeople(peopleData);
-      }
+    function handleRefresh() {
+      loadSidebarData();
     }
 
-    loadPeople();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [user?.id]);
+    window.addEventListener('arkive:sidebar-refresh', handleRefresh);
+    return () => window.removeEventListener('arkive:sidebar-refresh', handleRefresh);
+  }, [loadSidebarData]);
 
   function navigateTo(path) {
     navigate(path);
@@ -85,20 +65,18 @@ export default function Sidebar({
   async function handleCreateSpace() {
     if (!newSpaceName.trim()) return;
 
-    const { error } = await supabase.from('spaces').insert({
-      user_id: user.id,
-      name: newSpaceName.trim(),
-      icon: newSpaceIcon || DEFAULT_SPACE_ICON,
-      show_in_menu: true
-    });
-
-    if (!error) {
-      const spaces = await queryAccessibleSpaces();
+    try {
+      await apiCreateSpace({
+        name: newSpaceName.trim(),
+        icon: newSpaceIcon || DEFAULT_SPACE_ICON,
+        show_in_menu: true,
+      });
       setNewSpaceName('');
       setNewSpaceIcon(DEFAULT_SPACE_ICON);
       setShowCreateSpace(false);
-      setOwnedSpaces(spaces.filter((space) => space.user_id === user.id));
-      setSharedSpaces(spaces.filter((space) => space.user_id !== user.id));
+      await loadSidebarData();
+    } catch {
+      // Space name validation handled silently here; full form is in Settings
     }
   }
 
@@ -116,7 +94,7 @@ export default function Sidebar({
       >
         <span className="sidebar-item-icon">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+            <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
           </svg>
         </span>
         <span className="sidebar-item-content">
@@ -169,8 +147,8 @@ export default function Sidebar({
           >
             <span className="sidebar-item-icon">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
-                <polyline points="9 22 9 12 15 12 15 22"/>
+                <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+                <polyline points="9 22 9 12 15 12 15 22" />
               </svg>
             </span>
             <span className="sidebar-item-label">Home</span>
@@ -182,10 +160,10 @@ export default function Sidebar({
           >
             <span className="sidebar-item-icon">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
-                <line x1="16" y1="2" x2="16" y2="6"/>
-                <line x1="8" y1="2" x2="8" y2="6"/>
-                <line x1="3" y1="10" x2="21" y2="10"/>
+                <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
+                <line x1="16" y1="2" x2="16" y2="6" />
+                <line x1="8" y1="2" x2="8" y2="6" />
+                <line x1="3" y1="10" x2="21" y2="10" />
               </svg>
             </span>
             <span className="sidebar-item-label">Calendar</span>
@@ -238,7 +216,7 @@ export default function Sidebar({
                     Create
                   </button>
                   <button className="btn btn-ghost" style={{ fontSize: 12, padding: '4px 8px' }} onClick={() => setShowCreateSpace(false)}>
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
                   </button>
                 </div>
               </div>

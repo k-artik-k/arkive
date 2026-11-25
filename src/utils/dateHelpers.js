@@ -1,11 +1,11 @@
 const MONTHS = [
   'January', 'February', 'March', 'April', 'May', 'June',
-  'July', 'August', 'September', 'October', 'November', 'December'
+  'July', 'August', 'September', 'October', 'November', 'December',
 ];
 
 const MONTH_ABBR = [
   'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-  'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
+  'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
 ];
 
 // Parse date from diary format: "1st January 2025", "2nd Feb 2025", "23rd March 2025"
@@ -17,14 +17,39 @@ export function parseDiaryDate(title) {
 
   const day = parseInt(match[1], 10);
   const monthStr = match[3];
-  let monthIndex = MONTHS.findIndex(m => m.toLowerCase() === monthStr.toLowerCase());
+  let monthIndex = MONTHS.findIndex((m) => m.toLowerCase() === monthStr.toLowerCase());
   if (monthIndex === -1) {
-    monthIndex = MONTH_ABBR.findIndex(m => m.toLowerCase() === monthStr.toLowerCase());
+    monthIndex = MONTH_ABBR.findIndex((m) => m.toLowerCase() === monthStr.toLowerCase());
   }
   if (monthIndex === -1) return null;
 
   const year = parseInt(match[4], 10);
   return new Date(year, monthIndex, day);
+}
+
+/**
+ * Formats a local Date object into YYYY-MM-DD without UTC timezone shifts.
+ */
+export function formatLocalDateTag(date) {
+  if (!date) return null;
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
+/**
+ * Parses a YYYY-MM-DD string into { year, month (0-based), day } without timezone shifts.
+ */
+export function parseDateTag(dateTag) {
+  if (!dateTag || typeof dateTag !== 'string') return null;
+  const match = dateTag.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!match) return null;
+  return {
+    year: parseInt(match[1], 10),
+    month: parseInt(match[2], 10) - 1,
+    day: parseInt(match[3], 10),
+  };
 }
 
 export function getDaysInMonth(year, month) {
@@ -41,7 +66,7 @@ export function formatDate(date) {
   return d.toLocaleDateString('en-US', {
     year: 'numeric',
     month: 'short',
-    day: 'numeric'
+    day: 'numeric',
   });
 }
 

@@ -1,30 +1,41 @@
+import { useEffect, useState } from 'react';
 import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import Image from '@tiptap/extension-image';
 import Underline from '@tiptap/extension-underline';
 import Placeholder from '@tiptap/extension-placeholder';
-import { supabase } from '../supabaseClient';
-import { useAuth } from '../contexts/AuthContext';
+import { apiUploadImage } from '../api';
 import './RichTextEditor.css';
 
-export default function RichTextEditor({ content, onChange, isMarkdown, onToggleMode, placeholder = 'Start writing...' }) {
-  const { user } = useAuth();
+const ALLOWED_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp', 'image/gif', 'image/avif']);
+
+export default function RichTextEditor({
+  content,
+  onChange,
+  isMarkdown,
+  onToggleMode,
+  allowModeToggle = true,
+  placeholder = 'Start writing...',
+}) {
+  const [uploadError, setUploadError] = useState('');
+  const [uploading, setUploading] = useState(false);
 
   function renderModeToggle(markdownActive) {
+    if (!allowModeToggle) return null;
     return (
       <div className={`editor-mode-toggle ${markdownActive ? 'markdown' : 'rich'}`}>
         <span className="editor-mode-thumb" />
         <button
           type="button"
           className={`editor-mode-option ${!markdownActive ? 'active' : ''}`}
-          onClick={() => onToggleMode(false)}
+          onClick={() => onToggleMode?.(false)}
         >
           RT
         </button>
         <button
           type="button"
           className={`editor-mode-option ${markdownActive ? 'active' : ''}`}
-          onClick={() => onToggleMode(true)}
+          onClick={() => onToggleMode?.(true)}
         >
           MD
         </button>
@@ -37,31 +48,42 @@ export default function RichTextEditor({ content, onChange, isMarkdown, onToggle
       StarterKit,
       Underline,
       Image.configure({ inline: false, allowBase64: true }),
-      Placeholder.configure({ placeholder })
+      Placeholder.configure({ placeholder }),
     ],
     content: content || '',
-    onUpdate: ({ editor }) => {
-      onChange(editor.getHTML());
+    onUpdate: ({ editor: currentEditor }) => {
+      onChange(currentEditor.getHTML());
     },
     editable: true,
   });
 
+  useEffect(() => {
+    if (!editor || isMarkdown) return;
+    const nextContent = content || '';
+    if (nextContent !== editor.getHTML()) {
+      editor.commands.setContent(nextContent, false);
+    }
+  }, [content, editor, isMarkdown]);
+
   async function handleImageUpload(e) {
     const file = e.target.files?.[0];
+    e.target.value = '';
     if (!file || !editor) return;
 
-    const ext = file.name.split('.').pop();
-    const path = `${user.id}/${Date.now()}.${ext}`;
+    setUploadError('');
+    if (!ALLOWED_TYPES.has(file.type)) {
+      setUploadError('Only PNG, JPEG, WebP, GIF, and AVIF images are allowed.');
+      return;
+    }
 
-    const { error } = await supabase.storage
-      .from('post-images')
-      .upload(path, file, { contentType: file.type });
-
-    if (!error) {
-      const { data: { publicUrl } } = supabase.storage
-        .from('post-images')
-        .getPublicUrl(path);
-      editor.chain().focus().setImage({ src: publicUrl }).run();
+    setUploading(true);
+    try {
+      const { url } = await apiUploadImage(file);
+      editor.chain().focus().setImage({ src: url }).run();
+    } catch (err) {
+      setUploadError(err.message || 'Image upload failed.');
+    } finally {
+      setUploading(false);
     }
   }
 
@@ -76,7 +98,7 @@ export default function RichTextEditor({ content, onChange, isMarkdown, onToggle
         <textarea
           className="markdown-editor-textarea"
           value={content || ''}
-          onChange={e => onChange(e.target.value)}
+          onChange={(e) => onChange(e.target.value)}
           placeholder={placeholder}
         />
       </div>
@@ -89,6 +111,7 @@ export default function RichTextEditor({ content, onChange, isMarkdown, onToggle
     <div className="rich-editor-wrapper">
       <div className="rich-editor-toolbar">
         <button
+          type="button"
           onClick={() => editor.chain().focus().toggleBold().run()}
           className={editor.isActive('bold') ? 'active' : ''}
           title="Bold"
@@ -96,6 +119,7 @@ export default function RichTextEditor({ content, onChange, isMarkdown, onToggle
           <strong>B</strong>
         </button>
         <button
+          type="button"
           onClick={() => editor.chain().focus().toggleItalic().run()}
           className={editor.isActive('italic') ? 'active' : ''}
           title="Italic"
@@ -103,6 +127,7 @@ export default function RichTextEditor({ content, onChange, isMarkdown, onToggle
           <em>I</em>
         </button>
         <button
+          type="button"
           onClick={() => editor.chain().focus().toggleStrike().run()}
           className={editor.isActive('strike') ? 'active' : ''}
           title="Strikethrough"
@@ -110,6 +135,7 @@ export default function RichTextEditor({ content, onChange, isMarkdown, onToggle
           <s style={{ fontSize: 13 }}>S</s>
         </button>
         <button
+          type="button"
           onClick={() => editor.chain().focus().toggleUnderline().run()}
           className={editor.isActive('underline') ? 'active' : ''}
           title="Underline"
@@ -120,6 +146,7 @@ export default function RichTextEditor({ content, onChange, isMarkdown, onToggle
         <div className="toolbar-separator" />
 
         <button
+          type="button"
           onClick={() => editor.chain().focus().toggleHeading({ level: 1 }).run()}
           className={editor.isActive('heading', { level: 1 }) ? 'active' : ''}
           title="Heading 1"
@@ -128,6 +155,7 @@ export default function RichTextEditor({ content, onChange, isMarkdown, onToggle
           H1
         </button>
         <button
+          type="button"
           onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()}
           className={editor.isActive('heading', { level: 2 }) ? 'active' : ''}
           title="Heading 2"
@@ -136,6 +164,7 @@ export default function RichTextEditor({ content, onChange, isMarkdown, onToggle
           H2
         </button>
         <button
+          type="button"
           onClick={() => editor.chain().focus().toggleHeading({ level: 3 }).run()}
           className={editor.isActive('heading', { level: 3 }) ? 'active' : ''}
           title="Heading 3"
@@ -147,31 +176,38 @@ export default function RichTextEditor({ content, onChange, isMarkdown, onToggle
         <div className="toolbar-separator" />
 
         <button
+          type="button"
           onClick={() => editor.chain().focus().toggleBulletList().run()}
           className={editor.isActive('bulletList') ? 'active' : ''}
           title="Bullet list"
         >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><circle cx="4" cy="6" r="1" fill="currentColor"/><circle cx="4" cy="12" r="1" fill="currentColor"/><circle cx="4" cy="18" r="1" fill="currentColor"/></svg>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="8" y1="6" x2="21" y2="6" /><line x1="8" y1="12" x2="21" y2="12" /><line x1="8" y1="18" x2="21" y2="18" /><circle cx="4" cy="6" r="1" fill="currentColor" /><circle cx="4" cy="12" r="1" fill="currentColor" /><circle cx="4" cy="18" r="1" fill="currentColor" /></svg>
         </button>
         <button
+          type="button"
           onClick={() => editor.chain().focus().toggleBlockquote().run()}
           className={editor.isActive('blockquote') ? 'active' : ''}
           title="Blockquote"
         >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M10 7L8 11H11V17H5V11L7 7H10ZM18 7L16 11H19V17H13V11L15 7H18Z"/></svg>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M10 7L8 11H11V17H5V11L7 7H10ZM18 7L16 11H19V17H13V11L15 7H18Z" /></svg>
         </button>
 
         <div className="toolbar-separator" />
 
-        <button className="image-upload-btn" title="Add image">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>
-          <input type="file" accept="image/*" onChange={handleImageUpload} />
+        <button type="button" className="image-upload-btn" title={uploading ? 'Uploading...' : 'Add image'} disabled={uploading}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2" /><circle cx="8.5" cy="8.5" r="1.5" /><path d="M21 15l-5-5L5 21" /></svg>
+          <input type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/avif" onChange={handleImageUpload} disabled={uploading} />
         </button>
 
         <div className="toolbar-right">
           {renderModeToggle(false)}
         </div>
       </div>
+      {uploadError && (
+        <div style={{ color: 'var(--danger)', fontSize: 12, padding: '6px 12px', borderBottom: '1px solid var(--border)' }}>
+          {uploadError}
+        </div>
+      )}
       <div className="rich-editor-content">
         <EditorContent editor={editor} />
       </div>

@@ -1,12 +1,11 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
-import { supabase } from '../supabaseClient';
+import { useState, useEffect, useRef } from 'react';
+import { apiGetPinnedPosts, apiGetPosts } from '../api';
 import { useAuth } from '../contexts/AuthContext';
 import PostCard from '../components/PostCard';
 import PinnedPostsRail from '../components/PinnedPostsRail';
+import ErrorPage from './ErrorPage';
 import { sortPostsByCreatedAt } from '../utils/postOrdering';
 import './Home.css';
-
-const PAGE_SIZE = 20;
 
 export default function Home({ searchQuery = '' }) {
   const { user } = useAuth();
@@ -15,102 +14,114 @@ export default function Home({ searchQuery = '' }) {
   const [loading, setLoading] = useState(true);
   const [hasMore, setHasMore] = useState(true);
   const [page, setPage] = useState(0);
-  const observerRef = useRef(null);
+  const [error, setError] = useState('');
   const loadingRef = useRef(null);
 
-  const fetchPosts = useCallback(async (pageNum, search = '') => {
-    let query = supabase
-      .from('posts')
-      .select('*, spaces(id, name, icon, share_link), post_tags(tag_id, tags(*))')
-      .eq('user_id', user.id)
-      .order('created_at', { ascending: false })
-      .range(pageNum * PAGE_SIZE, (pageNum + 1) * PAGE_SIZE - 1);
-
-    if (search) {
-      query = query.ilike('title', `%${search}%`);
-    }
-
-    const { data } = await query;
-    return data || [];
-  }, [user]);
-
-  const fetchPinnedPosts = useCallback(async (search = '') => {
-    let query = supabase
-      .from('posts')
-      .select('*, spaces(id, name, icon, share_link), post_tags(tag_id, tags(*))')
-      .eq('user_id', user.id)
-      .eq('is_pinned', true)
-      .order('created_at', { ascending: false });
-
-    if (search) {
-      query = query.ilike('title', `%${search}%`);
-    }
-
-    const { data } = await query;
-    return data || [];
-  }, [user]);
-
   useEffect(() => {
-    if (!user) return;
-    setLoading(true);
-    setPosts([]);
-    setPinnedPosts([]);
-    setPage(0);
-    setHasMore(true);
-    Promise.all([fetchPosts(0, searchQuery), fetchPinnedPosts(searchQuery)]).then(([postData, pinnedData]) => {
-      setPosts(postData);
-      setPinnedPosts(sortPostsByCreatedAt(pinnedData));
-      setHasMore(postData.length === PAGE_SIZE);
-      setLoading(false);
-    });
-  }, [user, searchQuery, fetchPinnedPosts, fetchPosts]);
+    if (!user) return undefined;
+    let cancelled = false;
+
+    async function loadInitial() {
+      setLoading(true);
+      setError('');
+      setPosts([]);
+      setPinnedPosts([]);
+      setPage(0);
+      setHasMore(true);
+
+      try {
+        const [{ posts: postData = [], hasMore: more = false }, { posts: pinnedData = [] }] =
+          await Promise.all([
+            apiGetPosts({ page: 0, search: searchQuery }),
+            apiGetPinnedPosts({ search: searchQuery }),
+          ]);
+        if (cancelled) return;
+        setPosts(postData);
+        setPinnedPosts(sortPostsByCreatedAt(pinnedData));
+        setHasMore(more);
+      } catch (err) {
+        if (cancelled) return;
+        setError(err.message || 'Unable to load posts.');
+        setHasMore(false);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+
+    loadInitial();
+    return () => {
+      cancelled = true;
+    };
+  }, [user, searchQuery]);
 
   // Infinite scroll
   useEffect(() => {
-    if (!loadingRef.current) return;
+    if (!loadingRef.current) return undefined;
+    let cancelled = false;
+
     const observer = new IntersectionObserver(
       ([entry]) => {
         if (entry.isIntersecting && hasMore && !loading) {
           const nextPage = page + 1;
           setPage(nextPage);
           setLoading(true);
-          fetchPosts(nextPage, searchQuery).then(data => {
-            setPosts(prev => [...prev, ...data]);
-            setHasMore(data.length === PAGE_SIZE);
-            setLoading(false);
-          });
+          apiGetPosts({ page: nextPage, search: searchQuery })
+            .then(({ posts: data = [], hasMore: more = false }) => {
+              if (cancelled) return;
+              setPosts((prev) => [...prev, ...data]);
+              setHasMore(more);
+              setLoading(false);
+            })
+            .catch(() => {
+              if (!cancelled) {
+                setHasMore(false);
+                setLoading(false);
+              }
+            });
         }
       },
       { threshold: 0.1 }
     );
     observer.observe(loadingRef.current);
-    observerRef.current = observer;
-    return () => observer.disconnect();
-  }, [hasMore, loading, page, searchQuery, fetchPosts]);
+    return () => {
+      cancelled = true;
+      observer.disconnect();
+    };
+  }, [hasMore, loading, page, searchQuery]);
 
   function getPostTags(post) {
-    return post.post_tags?.map(pt => pt.tags).filter(Boolean) || [];
+    return post.post_tags?.map((pt) => pt.tags).filter(Boolean) || [];
   }
 
   function handlePostDeleted(postId) {
-    setPosts(prev => prev.filter(post => post.id !== postId));
-    setPinnedPosts(prev => prev.filter(post => post.id !== postId));
+    setPosts((prev) => prev.filter((post) => post.id !== postId));
+    setPinnedPosts((prev) => prev.filter((post) => post.id !== postId));
   }
 
   function handlePostUpdated(updatedPost, updatedTags) {
     const nextPost = {
       ...updatedPost,
-      post_tags: updatedTags.map((tag) => ({ tag_id: tag.id, tags: tag }))
+      post_tags: updatedTags.map((tag) => ({ tag_id: tag.id, tags: tag })),
     };
 
-    setPosts((prev) => prev.map((post) => (
-      post.id === updatedPost.id ? nextPost : post
-    )));
+    setPosts((prev) => prev.map((post) => (post.id === updatedPost.id ? nextPost : post)));
 
     setPinnedPosts((prev) => {
       const others = prev.filter((post) => post.id !== updatedPost.id);
       return updatedPost.is_pinned ? sortPostsByCreatedAt([nextPost, ...others]) : others;
     });
+  }
+
+  if (error) {
+    return (
+      <ErrorPage
+        embedded
+        code="500"
+        title="Unable to load posts"
+        description={error}
+        onRetry={() => window.location.reload()}
+      />
+    );
   }
 
   if (!loading && posts.length === 0 && pinnedPosts.length === 0) {

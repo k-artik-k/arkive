@@ -1,5 +1,10 @@
+# Dependencies & build artifacts
+node_modules/
+dist/
+dist-ssr/
+
 # Logs
-logs
+logs/
 *.log
 npm-debug.log*
 yarn-debug.log*
@@ -7,16 +12,43 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
-node_modules
-dist
-dist-ssr
+# Environment variables & Cloudflare local secrets
 *.local
+.env
+.env.*
+!.env.example
+.dev.vars
+.dev.vars.*
+!.dev.vars.example
+.wrangler/
+.vercel/
 
-# Editor directories and files
+# OAuth credentials, keys & certificates
+client_secret*.json
+*credentials*.json
+service-account*.json
+*.pem
+*.key
+*.p12
+*.pfx
+
+# Database dumps, exports & temp SQL
+supabase-export.json
+supabase-export/
+migration-import.sql
+arkive-export-*.json
+pvt-diary-export-*.json
+.tmp-*.sql
+*.sqlite
+*.sqlite3
+*.db
+
+# OS & Editor files
 .vscode/*
 !.vscode/extensions.json
-.idea
+.idea/
 .DS_Store
+Thumbs.db
 *.suo
 *.ntvs*
 *.njsproj

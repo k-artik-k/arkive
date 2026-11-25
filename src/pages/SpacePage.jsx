@@ -1,14 +1,13 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { supabase } from '../supabaseClient';
+import { apiGetSpace, apiGetSpacePosts } from '../api';
 import { useAuth } from '../contexts/AuthContext';
 import PostCard from '../components/PostCard';
 import PinnedPostsRail from '../components/PinnedPostsRail';
+import ErrorPage from './ErrorPage';
 import { getSharedSpaceUrl } from '../utils/appLinks';
 import { sortPostsByCreatedAt } from '../utils/postOrdering';
 import './SpacePage.css';
-
-const PAGE_SIZE = 20;
 
 export default function SpacePage() {
   const { id } = useParams();
@@ -24,98 +23,75 @@ export default function SpacePage() {
   const [copied, setCopied] = useState(false);
   const loadingRef = useRef(null);
 
-  const fetchSpace = useCallback(async () => {
-    if (!user) return;
-
-    const { data } = await supabase
-      .from('spaces')
-      .select('id, name, icon, user_id, share_link')
-      .eq('id', id)
-      .maybeSingle();
-
-    if (!data) {
-      setError('This space is not available to your account.');
-      setLoading(false);
-      return;
-    }
-
-    setSpace(data);
-  }, [id, user]);
-
-  const fetchPosts = useCallback(async (pageNum) => {
-    if (!space) return [];
-
-    const { data } = await supabase
-      .from('posts')
-      .select('*, spaces(id, name, icon, share_link), post_tags(tag_id, tags(*))')
-      .eq('space_id', id)
-      .order('created_at', { ascending: false })
-      .range(pageNum * PAGE_SIZE, (pageNum + 1) * PAGE_SIZE - 1);
-
-    return data || [];
-  }, [id, space]);
-
-  const fetchPinnedPosts = useCallback(async () => {
-    if (!space) return [];
-
-    const { data } = await supabase
-      .from('posts')
-      .select('*, spaces(id, name, icon, share_link), post_tags(tag_id, tags(*))')
-      .eq('space_id', id)
-      .eq('is_pinned', true)
-      .order('created_at', { ascending: false });
-
-    return data || [];
-  }, [id, space]);
-
   useEffect(() => {
-    fetchSpace();
-  }, [fetchSpace]);
-
-  useEffect(() => {
-    if (!space) return;
-
+    if (!user) return undefined;
     let cancelled = false;
 
-    async function loadFirstPage() {
+    async function loadSpaceAndPosts() {
       setLoading(true);
+      setError('');
+      setSpace(null);
       setPosts([]);
       setPinnedPosts([]);
       setPage(0);
-      const [data, pinnedData] = await Promise.all([fetchPosts(0), fetchPinnedPosts()]);
-      if (cancelled) return;
-      setPosts(data);
-      setPinnedPosts(sortPostsByCreatedAt(pinnedData));
-      setHasMore(data.length === PAGE_SIZE);
-      setLoading(false);
+
+      try {
+        const [{ space: spaceData }, { posts: postData = [], pinnedPosts: pinnedData = [], hasMore: more = false }] =
+          await Promise.all([
+            apiGetSpace(id),
+            apiGetSpacePosts(id, { page: 0 }),
+          ]);
+
+        if (cancelled) return;
+        setSpace(spaceData);
+        setPosts(postData);
+        setPinnedPosts(sortPostsByCreatedAt(pinnedData));
+        setHasMore(more);
+      } catch {
+        if (cancelled) return;
+        setError('This space is not available to your account.');
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
     }
 
-    loadFirstPage();
-
+    loadSpaceAndPosts();
     return () => {
       cancelled = true;
     };
-  }, [space, fetchPinnedPosts, fetchPosts]);
+  }, [id, user]);
 
   useEffect(() => {
-    if (!loadingRef.current) return undefined;
+    if (!loadingRef.current || !space) return undefined;
+    let cancelled = false;
 
     const observer = new IntersectionObserver(([entry]) => {
       if (entry.isIntersecting && hasMore && !loading) {
         const nextPage = page + 1;
         setPage(nextPage);
         setLoading(true);
-        fetchPosts(nextPage).then((data) => {
-          setPosts((prev) => [...prev, ...data]);
-          setHasMore(data.length === PAGE_SIZE);
-          setLoading(false);
-        });
+        apiGetSpacePosts(id, { page: nextPage })
+          .then(({ posts: data = [], hasMore: more = false }) => {
+            if (cancelled) return;
+            setPosts((prev) => [...prev, ...data]);
+            setHasMore(more);
+            setLoading(false);
+          })
+          .catch(() => {
+            if (!cancelled) {
+              setHasMore(false);
+              setLoading(false);
+            }
+          });
       }
     }, { threshold: 0.1 });
 
     observer.observe(loadingRef.current);
-    return () => observer.disconnect();
-  }, [hasMore, loading, page, fetchPosts]);
+    return () => {
+      cancelled = true;
+      observer.disconnect();
+    };
+  }, [hasMore, loading, page, id, space]);
 
   useEffect(() => {
     if (!copied) return undefined;
@@ -135,7 +111,7 @@ export default function SpacePage() {
   function handlePostUpdated(updatedPost, updatedTags) {
     const nextPost = {
       ...updatedPost,
-      post_tags: updatedTags.map((tag) => ({ tag_id: tag.id, tags: tag }))
+      post_tags: updatedTags.map((tag) => ({ tag_id: tag.id, tags: tag })),
     };
 
     setPosts((prev) => {
@@ -143,11 +119,7 @@ export default function SpacePage() {
         return prev.filter((post) => post.id !== updatedPost.id);
       }
 
-      return prev.map((post) => (
-        post.id === updatedPost.id
-          ? nextPost
-          : post
-      ));
+      return prev.map((post) => (post.id === updatedPost.id ? nextPost : post));
     });
 
     setPinnedPosts((prev) => {
@@ -167,19 +139,21 @@ export default function SpacePage() {
     try {
       await navigator.clipboard.writeText(getSharedSpaceUrl(space.share_link));
       setCopied(true);
-    } catch {}
+    } catch {
+      // Clipboard blocked
+    }
   }
 
   const isOwner = space?.user_id === user?.id;
 
   if (error) {
     return (
-      <div className="space-page">
-        <div className="space-page-error">
-          <h1 className="space-page-title">Unavailable</h1>
-          <p className="space-page-error-copy">{error}</p>
-        </div>
-      </div>
+      <ErrorPage
+        embedded
+        code="403"
+        title="Space unavailable"
+        description={error}
+      />
     );
   }
 

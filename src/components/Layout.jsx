@@ -4,7 +4,7 @@ import Sidebar from './Sidebar';
 import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts';
 import './Layout.css';
 
-export default function Layout({ children, onSearch }) {
+export default function Layout({ children, onSearch, initialSearch = '' }) {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [isMobile, setIsMobile] = useState(() => (typeof window !== 'undefined' ? window.innerWidth <= 768 : false));
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -27,6 +27,7 @@ export default function Layout({ children, onSearch }) {
     <div className="layout">
       <Header
         onSearch={onSearch}
+        initialSearch={initialSearch}
         showMobileMenuToggle={isMobile}
         mobileMenuOpen={mobileMenuOpen}
         onMenuToggle={() => setMobileMenuOpen((prev) => !prev)}

@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { supabase } from '../supabaseClient';
+import { apiAddSpaceMember, apiGetSpaceMembers, apiGetSpaces, apiRemoveSpaceMember } from '../api';
 import { useAuth } from '../contexts/AuthContext';
 import { getSharedSpaceUrl } from '../utils/appLinks';
 import './SettingsManager.css';
@@ -20,14 +20,12 @@ export default function PeopleManager() {
 
   const fetchSpaces = useCallback(async () => {
     if (!user) return;
-
-    const { data } = await supabase
-      .from('spaces')
-      .select('id, name, icon, share_link')
-      .eq('user_id', user.id)
-      .order('name');
-
-    setSpaces(data || []);
+    try {
+      const { owned = [] } = await apiGetSpaces();
+      setSpaces([...owned].sort((a, b) => a.name.localeCompare(b.name)));
+    } catch {
+      setSpaces([]);
+    }
   }, [user]);
 
   const fetchMembers = useCallback(async () => {
@@ -36,25 +34,27 @@ export default function PeopleManager() {
       return;
     }
 
-    const { data } = await supabase
-      .from('space_members')
-      .select('*')
-      .eq('space_id', selectedSpace)
-      .order('created_at');
-
-    setMembers(data || []);
+    try {
+      const { members: data = [] } = await apiGetSpaceMembers(selectedSpace);
+      setMembers(data);
+    } catch {
+      setMembers([]);
+    }
   }, [selectedSpace]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchSpaces();
   }, [fetchSpaces]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchMembers();
   }, [fetchMembers]);
 
   useEffect(() => {
     if (!selectedSpace && spaces.length > 0) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setSelectedSpace(spaces[0].id);
       return;
     }
@@ -71,36 +71,25 @@ export default function PeopleManager() {
     setMessage('');
     setError('');
 
-    const { data: existingUser } = await supabase
-      .from('profiles')
-      .select('id')
-      .eq('username', username)
-      .maybeSingle();
-
-    if (!existingUser) {
-      setError('Username not found.');
-      return;
-    }
-
-    const { error: insertError } = await supabase.from('space_members').insert({
-      space_id: selectedSpace,
-      member_username: username,
-      added_by: user.id
-    });
-
-    if (insertError) {
+    try {
+      await apiAddSpaceMember(selectedSpace, username);
+      setNewUsername('');
+      setMessage('Person added.');
+      await fetchMembers();
+      window.dispatchEvent(new Event('arkive:sidebar-refresh'));
+    } catch (insertError) {
       setError(insertError.message || 'Could not add this person.');
-      return;
     }
-
-    setNewUsername('');
-    setMessage('Person added.');
-    fetchMembers();
   }
 
-  async function handleRemove(id) {
-    await supabase.from('space_members').delete().eq('id', id);
-    fetchMembers();
+  async function handleRemove(memberUsername) {
+    try {
+      await apiRemoveSpaceMember(selectedSpace, memberUsername);
+      await fetchMembers();
+      window.dispatchEvent(new Event('arkive:sidebar-refresh'));
+    } catch (err) {
+      setError(err.message || 'Could not remove person.');
+    }
   }
 
   async function handleCopyLink() {
@@ -143,23 +132,21 @@ export default function PeopleManager() {
         </div>
 
         {selectedSpace && (
-          <>
-            <div className="settings-tool-row">
-              <input
-                className="settings-tool-input"
-                type="text"
-                placeholder="Username"
-                value={newUsername}
-                onChange={(event) => {
-                  setNewUsername(event.target.value);
-                  setError('');
-                  setMessage('');
-                }}
-                onKeyDown={(event) => event.key === 'Enter' && handleAdd()}
-              />
-              <button className="btn btn-primary" onClick={handleAdd}>Add</button>
-            </div>
-          </>
+          <div className="settings-tool-row">
+            <input
+              className="settings-tool-input"
+              type="text"
+              placeholder="Username"
+              value={newUsername}
+              onChange={(event) => {
+                setNewUsername(event.target.value);
+                setError('');
+                setMessage('');
+              }}
+              onKeyDown={(event) => event.key === 'Enter' && handleAdd()}
+            />
+            <button className="btn btn-primary" onClick={handleAdd}>Add</button>
+          </div>
         )}
 
         {error && <p className="settings-tool-note error">{error}</p>}
@@ -173,7 +160,7 @@ export default function PeopleManager() {
               <span className="settings-tool-name">{member.member_username}</span>
             </div>
             <div className="settings-tool-item-actions">
-              <button className="settings-tool-link danger" onClick={() => handleRemove(member.id)}>
+              <button className="settings-tool-link danger" onClick={() => handleRemove(member.member_username)}>
                 Remove
               </button>
             </div>
