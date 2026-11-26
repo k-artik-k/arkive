@@ -1,12 +1,16 @@
 import { useEffect, useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { exportAllData, importData } from '../utils/exportImport';
+import Avatar from '../components/Avatar';
+import AvatarPreviewModal from '../components/AvatarPreviewModal';
 import SettingsShell from '../components/SettingsShell';
 
 export default function SettingsProfile() {
-  const { user, profile, updateUsername, updatePassword, deleteAccount, signOut } = useAuth();
+  const { user, profile, updateProfile, updateUsername, updatePassword, deleteAccount, signOut } = useAuth();
   const [username, setUsername] = useState('');
   const [usernameState, setUsernameState] = useState({ error: '', success: '', saving: false });
+  const [avatarState, setAvatarState] = useState({ error: '', success: '', saving: false });
+  const [showAvatarPreview, setShowAvatarPreview] = useState(false);
   const [password, setPassword] = useState('');
   const [passwordConfirm, setPasswordConfirm] = useState('');
   const [passwordState, setPasswordState] = useState({ error: '', success: '', saving: false });
@@ -20,6 +24,7 @@ export default function SettingsProfile() {
     profile?.display_name ||
     user?.email?.split('@')[0] ||
     'user';
+  const identiconSeed = user?.id || profile?.username || 'default';
 
   useEffect(() => {
     setUsername(currentUsername);
@@ -48,6 +53,16 @@ export default function SettingsProfile() {
     }
 
     setUsernameState({ error: '', success: 'Username updated successfully.', saving: false });
+  }
+
+  async function handleUseIdenticon() {
+    setAvatarState({ error: '', success: '', saving: true });
+    const { error } = await updateProfile({ avatar_url: null });
+    if (error) {
+      setAvatarState({ error: error.message || 'Unable to update profile picture.', success: '', saving: false });
+      return;
+    }
+    setAvatarState({ error: '', success: 'Switched to identicon.', saving: false });
   }
 
   async function handlePasswordSave() {
@@ -127,6 +142,52 @@ export default function SettingsProfile() {
 
   return (
     <SettingsShell title="Profile">
+      <section className="settings-card">
+        <h2 className="settings-card-title">Profile Picture</h2>
+        <div className="settings-avatar-row">
+          <button
+            type="button"
+            className="settings-avatar-btn"
+            onClick={() => setShowAvatarPreview(true)}
+            title="View profile picture"
+            aria-label="View profile picture"
+          >
+            <Avatar
+              avatarUrl={profile?.avatar_url}
+              identiconValue={identiconSeed}
+              size={64}
+              alt="Profile picture"
+            />
+          </button>
+          <div className="settings-avatar-info">
+            <div className="settings-avatar-label">
+              {profile?.avatar_url ? 'Custom profile picture' : 'Generated identicon'}
+            </div>
+            <div className="settings-avatar-actions">
+              <button
+                type="button"
+                className="btn btn-ghost"
+                onClick={() => setShowAvatarPreview(true)}
+              >
+                View picture
+              </button>
+              {profile?.avatar_url && (
+                <button
+                  type="button"
+                  className="btn btn-ghost"
+                  onClick={handleUseIdenticon}
+                  disabled={avatarState.saving}
+                >
+                  {avatarState.saving ? 'Switching...' : 'Use identicon'}
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+        {avatarState.error && <p className="settings-note error">{avatarState.error}</p>}
+        {avatarState.success && <p className="settings-note success">{avatarState.success}</p>}
+      </section>
+
       <section className="settings-card">
         <h2 className="settings-card-title">Account</h2>
         <div className="settings-form-grid">
@@ -229,6 +290,17 @@ export default function SettingsProfile() {
           )}
         </div>
       </section>
+      {showAvatarPreview && (
+        <AvatarPreviewModal
+          avatarUrl={profile?.avatar_url}
+          identiconValue={identiconSeed}
+          title={profile?.display_name || currentUsername}
+          subtitle={`@${currentUsername}`}
+          onUseIdenticon={profile?.avatar_url ? handleUseIdenticon : undefined}
+          usingIdenticonSaving={avatarState.saving}
+          onClose={() => setShowAvatarPreview(false)}
+        />
+      )}
     </SettingsShell>
   );
 }

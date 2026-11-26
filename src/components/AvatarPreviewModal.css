@@ -1,0 +1,67 @@
+.avatar-preview-modal {
+  max-width: 380px;
+}
+
+.avatar-preview-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.avatar-preview-meta {
+  min-width: 0;
+}
+
+.avatar-preview-title {
+  margin-bottom: 0;
+  font-size: 17px;
+  font-weight: 600;
+  line-height: 1.3;
+  word-break: break-word;
+}
+
+.avatar-preview-subtitle {
+  margin-top: 4px;
+  font-size: 13px;
+  color: var(--text-secondary);
+  opacity: 0.72;
+  word-break: break-word;
+}
+
+.avatar-preview-close {
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-elevated);
+  color: var(--text-secondary);
+}
+
+.avatar-preview-close:hover {
+  color: var(--text);
+  border-color: var(--text-muted);
+}
+
+.avatar-preview-stage {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 12px 0 8px;
+}
+
+.avatar-preview-frame {
+  padding: 6px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: var(--bg);
+}
+
+.avatar-preview-actions {
+  margin-top: 22px;
+}

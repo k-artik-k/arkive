@@ -81,6 +81,7 @@
 }
 
 .sidebar-person-avatar {
+  box-sizing: content-box;
   width: 18px;
   height: 18px;
   border-radius: 50%;

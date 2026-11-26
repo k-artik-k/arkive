@@ -1559,7 +1559,13 @@ app.get('/spaces/:id/members', requireAuth, async (c) => {
   }
 
   const { results } = await db
-    .prepare('SELECT * FROM space_members WHERE space_id = ? ORDER BY created_at ASC')
+    .prepare(
+      `SELECT sm.*, p.display_name, p.avatar_url
+       FROM space_members sm
+       LEFT JOIN profiles p ON LOWER(p.username) = LOWER(sm.member_username)
+       WHERE sm.space_id = ?
+       ORDER BY sm.created_at ASC`
+    )
     .bind(spaceId)
     .all();
 
@@ -1583,7 +1589,7 @@ app.post('/spaces/:id/members', requireAuth, async (c) => {
   }
 
   const targetProfile = await db
-    .prepare('SELECT id, username FROM profiles WHERE LOWER(username) = LOWER(?)')
+    .prepare('SELECT id, username, display_name, avatar_url FROM profiles WHERE LOWER(username) = LOWER(?)')
     .bind(usernameInput)
     .first();
   if (!targetProfile) {
@@ -1609,7 +1615,14 @@ app.post('/spaces/:id/members', requireAuth, async (c) => {
     .run();
 
   const member = await db.prepare('SELECT * FROM space_members WHERE id = ?').bind(id).first();
-  return c.json({ member }, 201);
+  return c.json(
+    {
+      member: member
+        ? { ...member, display_name: targetProfile.display_name, avatar_url: targetProfile.avatar_url }
+        : member,
+    },
+    201
+  );
 });
 
 app.delete('/spaces/:id/members/:username', requireAuth, async (c) => {

@@ -34,12 +34,33 @@
   margin-bottom: 24px;
 }
 
+.person-profile-avatar-btn {
+  padding: 0;
+  border: none;
+  background: none;
+  border-radius: 50%;
+  flex-shrink: 0;
+  cursor: pointer;
+}
+
+.person-profile-avatar-btn:hover .person-profile-avatar {
+  border-color: var(--text-muted);
+}
+
 .person-profile-avatar {
+  box-sizing: content-box;
   flex-shrink: 0;
   border: 1px solid var(--border);
   border-radius: 50%;
   overflow: hidden;
   background: var(--bg-elevated);
+}
+
+.person-profile-view-btn {
+  margin-top: 12px;
+  min-height: 32px;
+  padding: 6px 12px;
+  font-size: 12px;
 }
 
 .person-profile-avatar img {

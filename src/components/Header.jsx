@@ -1,16 +1,26 @@
 import { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import Identicon from './Identicon';
+import Avatar from './Avatar';
+import AvatarPreviewModal from './AvatarPreviewModal';
 import ProfileMenu from './ProfileMenu';
 import './Header.css';
 
 export default function Header({ onSearch, initialSearch = '', showMobileMenuToggle = false, mobileMenuOpen = false, onMenuToggle }) {
-  const { user, profile } = useAuth();
+  const { user, profile, updateProfile } = useAuth();
   const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState(initialSearch);
   const [showProfileMenu, setShowProfileMenu] = useState(false);
+  const [showAvatarPreview, setShowAvatarPreview] = useState(false);
+  const [resettingAvatar, setResettingAvatar] = useState(false);
   const profileRef = useRef(null);
+
+  const currentUsername =
+    profile?.username ||
+    profile?.display_name ||
+    user?.email?.split('@')[0] ||
+    'user';
+  const identiconSeed = user?.id || profile?.username || 'default';
 
   useEffect(() => {
     setSearchQuery(initialSearch);
@@ -40,6 +50,12 @@ export default function Header({ onSearch, initialSearch = '', showMobileMenuTog
     } else if (e.key === 'Enter' && !onSearch && searchQuery.trim()) {
       navigate(`/?q=${encodeURIComponent(searchQuery.trim())}`);
     }
+  }
+
+  async function handleUseIdenticon() {
+    setResettingAvatar(true);
+    await updateProfile({ avatar_url: null });
+    setResettingAvatar(false);
   }
 
   return (
@@ -120,22 +136,42 @@ export default function Header({ onSearch, initialSearch = '', showMobileMenuTog
         </button>
 
         <div ref={profileRef} style={{ position: 'relative' }}>
-          <div
+          <button
+            type="button"
             className="header-avatar"
             onClick={() => setShowProfileMenu(!showProfileMenu)}
             title="Profile"
+            aria-label="Profile menu"
           >
-            {profile?.avatar_url ? (
-              <img src={profile.avatar_url} alt="avatar" />
-            ) : (
-              <Identicon value={user?.id || 'default'} size={32} />
-            )}
-          </div>
+            <Avatar
+              avatarUrl={profile?.avatar_url}
+              identiconValue={identiconSeed}
+              size={32}
+              alt="Profile picture"
+            />
+          </button>
           {showProfileMenu && (
-            <ProfileMenu onClose={() => setShowProfileMenu(false)} />
+            <ProfileMenu
+              onClose={() => setShowProfileMenu(false)}
+              onViewAvatar={() => {
+                setShowProfileMenu(false);
+                setShowAvatarPreview(true);
+              }}
+            />
           )}
         </div>
       </div>
+      {showAvatarPreview && (
+        <AvatarPreviewModal
+          avatarUrl={profile?.avatar_url}
+          identiconValue={identiconSeed}
+          title={profile?.display_name || currentUsername}
+          subtitle={`@${currentUsername}`}
+          onUseIdenticon={profile?.avatar_url ? handleUseIdenticon : undefined}
+          usingIdenticonSaving={resettingAvatar}
+          onClose={() => setShowAvatarPreview(false)}
+        />
+      )}
     </header>
   );
 }

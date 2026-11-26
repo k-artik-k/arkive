@@ -1,21 +1,10 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import Identicon from '../components/Identicon';
+import Avatar from '../components/Avatar';
+import AvatarPreviewModal from '../components/AvatarPreviewModal';
 import { useAuth } from '../contexts/AuthContext';
 import { fetchOwnedSpacePerson } from '../utils/peopleDirectory';
 import './PersonProfile.css';
-
-function Avatar({ avatarUrl, value, size = 88 }) {
-  return (
-    <div className="person-profile-avatar" style={{ width: size, height: size }}>
-      {avatarUrl ? (
-        <img src={avatarUrl} alt="" />
-      ) : (
-        <Identicon value={value} size={size} />
-      )}
-    </div>
-  );
-}
 
 export default function PersonProfile() {
   const navigate = useNavigate();
@@ -24,6 +13,7 @@ export default function PersonProfile() {
   const [person, setPerson] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [showAvatarPreview, setShowAvatarPreview] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -95,7 +85,22 @@ export default function PersonProfile() {
         </button>
 
         <div className="person-profile-hero">
-          <Avatar avatarUrl={person.avatarUrl} value={person.username} />
+          <button
+            type="button"
+            className="person-profile-avatar-btn"
+            onClick={() => setShowAvatarPreview(true)}
+            title="View profile picture"
+            aria-label="View profile picture"
+          >
+            <div className="person-profile-avatar" style={{ width: 88, height: 88 }}>
+              <Avatar
+                avatarUrl={person.avatarUrl}
+                identiconValue={person.username}
+                size={88}
+                alt={`${person.displayName || person.username} profile picture`}
+              />
+            </div>
+          </button>
 
           <div className="person-profile-identity">
             <h1 className="person-profile-title">{person.displayName}</h1>
@@ -105,6 +110,13 @@ export default function PersonProfile() {
             {!hasDistinctDisplayName && (
               <p className="person-profile-username">{person.username}</p>
             )}
+            <button
+              type="button"
+              className="btn btn-ghost person-profile-view-btn"
+              onClick={() => setShowAvatarPreview(true)}
+            >
+              View picture
+            </button>
           </div>
         </div>
 
@@ -130,6 +142,15 @@ export default function PersonProfile() {
           </div>
         </section>
       </div>
+      {showAvatarPreview && (
+        <AvatarPreviewModal
+          avatarUrl={person.avatarUrl}
+          identiconValue={person.username}
+          title={person.displayName || person.username}
+          subtitle={hasDistinctDisplayName ? `@${person.username}` : person.username}
+          onClose={() => setShowAvatarPreview(false)}
+        />
+      )}
     </div>
   );
 }

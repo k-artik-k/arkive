@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { apiCreateSpace, apiGetPeople, apiGetSpaces } from '../api';
 import { useAuth } from '../contexts/AuthContext';
-import Identicon from './Identicon';
+import Avatar from './Avatar';
 import './Sidebar.css';
 
 const DEFAULT_SPACE_ICON = '📁';
@@ -117,11 +117,7 @@ export default function Sidebar({
       >
         <span className="sidebar-item-icon sidebar-person-icon">
           <span className="sidebar-person-avatar">
-            {person.avatarUrl ? (
-              <img src={person.avatarUrl} alt="" />
-            ) : (
-              <Identicon value={person.username} size={18} />
-            )}
+            <Avatar avatarUrl={person.avatarUrl} identiconValue={person.username} size={18} />
           </span>
         </span>
         <span className="sidebar-item-content">

@@ -122,6 +122,44 @@
   gap: 6px;
 }
 
+.settings-tool-person {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.settings-tool-person-avatar {
+  box-sizing: content-box;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  overflow: hidden;
+  background: var(--bg-elevated);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.settings-tool-person-avatar:hover {
+  border-color: var(--text-muted);
+}
+
+.settings-tool-person-link {
+  border: none;
+  background: none;
+  padding: 0;
+  text-align: left;
+  cursor: pointer;
+}
+
+.settings-tool-person-link:hover {
+  text-decoration: underline;
+}
+
 .settings-tool-title-row {
   display: flex;
   align-items: center;
