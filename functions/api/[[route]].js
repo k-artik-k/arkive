@@ -261,6 +261,30 @@ function isSafeAvatarUrl(url) {
   return url.startsWith('/api/images/serve/') || /^https?:\/\//i.test(url);
 }
 
+async function cleanupUnusedOwnedImage(env, db, userId, imageUrl) {
+  if (!imageUrl || typeof imageUrl !== 'string') return;
+  const prefix = `/api/images/serve/${userId}/`;
+  if (!imageUrl.startsWith(prefix)) return;
+  const key = imageUrl.slice('/api/images/serve/'.length);
+  if (!key) return;
+
+  const [usedInPost, usedInProfile] = await Promise.all([
+    db.prepare('SELECT id FROM posts WHERE user_id = ? AND instr(body, ?) > 0 LIMIT 1').bind(userId, imageUrl).first(),
+    db.prepare('SELECT id FROM profiles WHERE id = ? AND avatar_url = ? LIMIT 1').bind(userId, imageUrl).first(),
+  ]);
+
+  if (usedInPost || usedInProfile) return;
+
+  if (env.IMAGES) {
+    try {
+      await env.IMAGES.delete(key);
+    } catch {
+      // ignore R2 delete error
+    }
+  }
+  await db.prepare('DELETE FROM media WHERE key = ? AND user_id = ?').bind(key, userId).run();
+}
+
 // ── Env & Auth Middleware ──
 
 app.use('*', async (c, next) => {
@@ -887,7 +911,10 @@ app.put('/profile', requireAuth, async (c) => {
   if (body.avatar_url !== undefined && !isSafeAvatarUrl(body.avatar_url)) {
     return c.json({ error: 'Invalid avatar URL' }, 400);
   }
-  const nextAvatarUrl = body.avatar_url !== undefined ? body.avatar_url : currentProfile.avatar_url;
+  const nextAvatarUrl =
+    body.avatar_url !== undefined
+      ? body.avatar_url || null
+      : currentProfile.avatar_url;
 
   const stmts = [
     db
@@ -904,6 +931,9 @@ app.put('/profile', requireAuth, async (c) => {
   }
 
   await db.batch(stmts);
+  if (currentProfile.avatar_url && currentProfile.avatar_url !== nextAvatarUrl) {
+    await cleanupUnusedOwnedImage(c.env, db, userId, currentProfile.avatar_url);
+  }
   const updated = await db.prepare('SELECT * FROM profiles WHERE id = ?').bind(userId).first();
   return c.json({ profile: updated });
 });
@@ -1232,20 +1262,7 @@ app.delete('/posts/:id', requireAuth, async (c) => {
 
   const imageKeys = extractOwnedImageKeys(existing.body, userId);
   for (const key of imageKeys) {
-    const stillUsed = await db
-      .prepare('SELECT id FROM posts WHERE user_id = ? AND instr(body, ?) > 0 LIMIT 1')
-      .bind(userId, `/api/images/serve/${key}`)
-      .first();
-    if (!stillUsed) {
-      if (c.env.IMAGES) {
-        try {
-          await c.env.IMAGES.delete(key);
-        } catch {
-          // ignore R2 delete error
-        }
-      }
-      await db.prepare('DELETE FROM media WHERE key = ? AND user_id = ?').bind(key, userId).run();
-    }
+    await cleanupUnusedOwnedImage(c.env, db, userId, `/api/images/serve/${key}`);
   }
 
   return c.json({ ok: true });
@@ -1560,7 +1577,7 @@ app.get('/spaces/:id/members', requireAuth, async (c) => {
 
   const { results } = await db
     .prepare(
-      `SELECT sm.*, p.display_name, p.avatar_url
+      `SELECT sm.*, p.id AS profile_id, p.display_name, p.avatar_url
        FROM space_members sm
        LEFT JOIN profiles p ON LOWER(p.username) = LOWER(sm.member_username)
        WHERE sm.space_id = ?
@@ -1618,7 +1635,12 @@ app.post('/spaces/:id/members', requireAuth, async (c) => {
   return c.json(
     {
       member: member
-        ? { ...member, display_name: targetProfile.display_name, avatar_url: targetProfile.avatar_url }
+        ? {
+            ...member,
+            profile_id: targetProfile.id,
+            display_name: targetProfile.display_name,
+            avatar_url: targetProfile.avatar_url,
+          }
         : member,
     },
     201
@@ -1715,7 +1737,7 @@ async function buildPeopleList(db, userId, targetUsername = null) {
     const chunk = usernames.slice(i, i + 50);
     const placeholders = chunk.map(() => '?').join(',');
     const { results } = await db
-      .prepare(`SELECT username, display_name, avatar_url FROM profiles WHERE username IN (${placeholders})`)
+      .prepare(`SELECT id, username, display_name, avatar_url FROM profiles WHERE username IN (${placeholders})`)
       .bind(...chunk)
       .all();
     for (const p of results || []) {
@@ -1740,6 +1762,7 @@ async function buildPeopleList(db, userId, targetUsername = null) {
       const username = profile?.username || entry.canonicalUsername;
       const personSpaces = [...entry.spaces.values()];
       return {
+        id: profile?.id || '',
         username,
         displayName: profile?.display_name || username,
         avatarUrl: profile?.avatar_url || '',

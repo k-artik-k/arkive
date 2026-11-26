@@ -174,7 +174,7 @@ export default function PeopleManager() {
                 >
                   <Avatar
                     avatarUrl={member.avatar_url || ''}
-                    identiconValue={member.member_username}
+                    identiconValue={member.profile_id || member.member_username}
                     size={32}
                     alt={`${displayName} profile picture`}
                   />
@@ -219,7 +219,7 @@ export default function PeopleManager() {
       {previewMember && (
         <AvatarPreviewModal
           avatarUrl={previewMember.avatar_url || ''}
-          identiconValue={previewMember.member_username}
+          identiconValue={previewMember.profile_id || previewMember.member_username}
           title={previewMember.display_name || previewMember.member_username}
           subtitle={
             previewMember.display_name && previewMember.display_name !== previewMember.member_username

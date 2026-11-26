@@ -95,7 +95,7 @@ export default function PersonProfile() {
             <div className="person-profile-avatar" style={{ width: 88, height: 88 }}>
               <Avatar
                 avatarUrl={person.avatarUrl}
-                identiconValue={person.username}
+                identiconValue={person.id || person.username}
                 size={88}
                 alt={`${person.displayName || person.username} profile picture`}
               />
@@ -145,7 +145,7 @@ export default function PersonProfile() {
       {showAvatarPreview && (
         <AvatarPreviewModal
           avatarUrl={person.avatarUrl}
-          identiconValue={person.username}
+          identiconValue={person.id || person.username}
           title={person.displayName || person.username}
           subtitle={hasDistinctDisplayName ? `@${person.username}` : person.username}
           onClose={() => setShowAvatarPreview(false)}

@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
+import { uploadProfilePhoto } from '../utils/avatarUpload';
 import Avatar from './Avatar';
 import AvatarPreviewModal from './AvatarPreviewModal';
 import ProfileMenu from './ProfileMenu';
@@ -20,7 +21,7 @@ export default function Header({ onSearch, initialSearch = '', showMobileMenuTog
     profile?.display_name ||
     user?.email?.split('@')[0] ||
     'user';
-  const identiconSeed = user?.id || profile?.username || 'default';
+  const identiconSeed = profile?.id || user?.id || profile?.username || 'default';
 
   useEffect(() => {
     setSearchQuery(initialSearch);
@@ -56,6 +57,10 @@ export default function Header({ onSearch, initialSearch = '', showMobileMenuTog
     setResettingAvatar(true);
     await updateProfile({ avatar_url: null });
     setResettingAvatar(false);
+  }
+
+  async function handleUploadPhoto(file) {
+    return uploadProfilePhoto(file, updateProfile);
   }
 
   return (
@@ -167,6 +172,7 @@ export default function Header({ onSearch, initialSearch = '', showMobileMenuTog
           identiconValue={identiconSeed}
           title={profile?.display_name || currentUsername}
           subtitle={`@${currentUsername}`}
+          onUploadPhoto={handleUploadPhoto}
           onUseIdenticon={profile?.avatar_url ? handleUseIdenticon : undefined}
           usingIdenticonSaving={resettingAvatar}
           onClose={() => setShowAvatarPreview(false)}

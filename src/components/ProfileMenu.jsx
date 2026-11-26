@@ -12,7 +12,7 @@ export default function ProfileMenu({ onClose, onViewAvatar }) {
     profile?.display_name ||
     user?.email?.split('@')[0] ||
     'user';
-  const identiconSeed = user?.id || profile?.username || 'default';
+  const identiconSeed = profile?.id || user?.id || profile?.username || 'default';
 
   function openPage(path) {
     navigate(path);

@@ -1,4 +1,5 @@
-import { useEffect } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { AVATAR_ACCEPT } from '../utils/avatarUpload';
 import Avatar from './Avatar';
 import './AvatarPreviewModal.css';
 
@@ -7,10 +8,15 @@ export default function AvatarPreviewModal({
   identiconValue = 'default',
   title = '',
   subtitle = '',
+  onUploadPhoto,
   onUseIdenticon,
   usingIdenticonSaving = false,
   onClose,
 }) {
+  const fileInputRef = useRef(null);
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState('');
+
   useEffect(() => {
     function handleKeyDown(event) {
       if (event.key === 'Escape') {
@@ -23,6 +29,21 @@ export default function AvatarPreviewModal({
   }, [onClose]);
 
   const hasCustomPhoto = Boolean(typeof avatarUrl === 'string' && avatarUrl.trim());
+  const busy = uploading || usingIdenticonSaving;
+
+  async function handleFileChange(event) {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file || !onUploadPhoto) return;
+
+    setUploadError('');
+    setUploading(true);
+    const result = await onUploadPhoto(file);
+    setUploading(false);
+    if (result?.error) {
+      setUploadError(result.error.message || 'Unable to update profile photo.');
+    }
+  }
 
   return (
     <div
@@ -63,13 +84,35 @@ export default function AvatarPreviewModal({
           </div>
         </div>
 
+        {uploadError && <p className="avatar-preview-error">{uploadError}</p>}
+
+        {onUploadPhoto && (
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept={AVATAR_ACCEPT}
+            className="sr-only"
+            onChange={handleFileChange}
+          />
+        )}
+
         <div className="modal-actions avatar-preview-actions">
+          {onUploadPhoto && (
+            <button
+              type="button"
+              className="btn btn-ghost"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={busy}
+            >
+              {uploading ? 'Uploading...' : hasCustomPhoto ? 'Change photo' : 'Choose photo'}
+            </button>
+          )}
           {hasCustomPhoto && onUseIdenticon && (
             <button
               type="button"
               className="btn btn-ghost"
               onClick={onUseIdenticon}
-              disabled={usingIdenticonSaving}
+              disabled={busy}
             >
               {usingIdenticonSaving ? 'Switching...' : 'Use identicon'}
             </button>

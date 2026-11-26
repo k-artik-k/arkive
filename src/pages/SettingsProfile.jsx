@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
+import { AVATAR_ACCEPT, uploadProfilePhoto } from '../utils/avatarUpload';
 import { exportAllData, importData } from '../utils/exportImport';
 import Avatar from '../components/Avatar';
 import AvatarPreviewModal from '../components/AvatarPreviewModal';
@@ -11,6 +12,7 @@ export default function SettingsProfile() {
   const [usernameState, setUsernameState] = useState({ error: '', success: '', saving: false });
   const [avatarState, setAvatarState] = useState({ error: '', success: '', saving: false });
   const [showAvatarPreview, setShowAvatarPreview] = useState(false);
+  const avatarFileInputRef = useRef(null);
   const [password, setPassword] = useState('');
   const [passwordConfirm, setPasswordConfirm] = useState('');
   const [passwordState, setPasswordState] = useState({ error: '', success: '', saving: false });
@@ -24,7 +26,7 @@ export default function SettingsProfile() {
     profile?.display_name ||
     user?.email?.split('@')[0] ||
     'user';
-  const identiconSeed = user?.id || profile?.username || 'default';
+  const identiconSeed = profile?.id || user?.id || profile?.username || 'default';
 
   useEffect(() => {
     setUsername(currentUsername);
@@ -63,6 +65,28 @@ export default function SettingsProfile() {
       return;
     }
     setAvatarState({ error: '', success: 'Switched to identicon.', saving: false });
+  }
+
+  async function handlePhotoUpload(file) {
+    setAvatarState({ error: '', success: '', saving: true });
+    const result = await uploadProfilePhoto(file, updateProfile);
+    if (result.error) {
+      setAvatarState({
+        error: result.error.message || 'Unable to upload profile photo.',
+        success: '',
+        saving: false,
+      });
+      return result;
+    }
+    setAvatarState({ error: '', success: 'Profile photo updated.', saving: false });
+    return result;
+  }
+
+  async function handlePhotoInputChange(event) {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+    await handlePhotoUpload(file);
   }
 
   async function handlePasswordSave() {
@@ -164,6 +188,21 @@ export default function SettingsProfile() {
               {profile?.avatar_url ? 'Custom profile picture' : 'Generated identicon'}
             </div>
             <div className="settings-avatar-actions">
+              <input
+                ref={avatarFileInputRef}
+                type="file"
+                accept={AVATAR_ACCEPT}
+                className="sr-only"
+                onChange={handlePhotoInputChange}
+              />
+              <button
+                type="button"
+                className="btn btn-primary"
+                onClick={() => avatarFileInputRef.current?.click()}
+                disabled={avatarState.saving}
+              >
+                {avatarState.saving ? 'Saving...' : profile?.avatar_url ? 'Change photo' : 'Choose photo'}
+              </button>
               <button
                 type="button"
                 className="btn btn-ghost"
@@ -178,7 +217,7 @@ export default function SettingsProfile() {
                   onClick={handleUseIdenticon}
                   disabled={avatarState.saving}
                 >
-                  {avatarState.saving ? 'Switching...' : 'Use identicon'}
+                  Use identicon
                 </button>
               )}
             </div>
@@ -296,6 +335,7 @@ export default function SettingsProfile() {
           identiconValue={identiconSeed}
           title={profile?.display_name || currentUsername}
           subtitle={`@${currentUsername}`}
+          onUploadPhoto={handlePhotoUpload}
           onUseIdenticon={profile?.avatar_url ? handleUseIdenticon : undefined}
           usingIdenticonSaving={avatarState.saving}
           onClose={() => setShowAvatarPreview(false)}

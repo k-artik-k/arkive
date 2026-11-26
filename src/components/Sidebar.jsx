@@ -117,7 +117,7 @@ export default function Sidebar({
       >
         <span className="sidebar-item-icon sidebar-person-icon">
           <span className="sidebar-person-avatar">
-            <Avatar avatarUrl={person.avatarUrl} identiconValue={person.username} size={18} />
+            <Avatar avatarUrl={person.avatarUrl} identiconValue={person.id || person.username} size={18} />
           </span>
         </span>
         <span className="sidebar-item-content">
